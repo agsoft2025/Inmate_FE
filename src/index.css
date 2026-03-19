@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme{
+    --color-primary: #330867;
+    --color-secondary: #ecf0f1;
+     --gradient-login: linear-gradient(250deg, #30cfd0, #330867);
+}
