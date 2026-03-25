@@ -285,7 +285,7 @@ export default function InmateFormModal({
                 error={!!errors.status}
                 helperText={errors.status?.message}
               >
-                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="Active">Active</MenuItem>
                 <MenuItem value="On Bail">On Bail</MenuItem>
                 <MenuItem value="On Parole">On Parole</MenuItem>
                 <MenuItem value="Released">Released</MenuItem>
