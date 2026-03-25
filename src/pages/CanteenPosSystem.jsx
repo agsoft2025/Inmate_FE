@@ -27,7 +27,7 @@ const CanteenPosSystem = () => {
     const [purchaseSearch, setPurchaseSearch] = useState("");
     const [refetchKey, setRefetchKey] = useState(0);
     const [openFaceId, setOpenFaceId] = useState(false);
-    const [faceidData, setFaceIdData] = useState(null);    
+    const [faceidData, setFaceIdData] = useState(null);
 
     const {
         data: purchasesData,
@@ -437,9 +437,19 @@ const CanteenPosSystem = () => {
                                             </Typography>
                                         </Box>
 
-                                        <Typography fontWeight={600} sx={{ flexShrink: 0 }}>
-                                            ₹{item.price}
-                                        </Typography>
+                                        <div className="flex flex-col items-center">
+                                            <Typography fontWeight={600} sx={{ flexShrink: 0 }}>
+                                                ₹{item.price}
+                                            </Typography>
+
+                                            <span
+                                                className={`px-3 py-1 rounded-2xl text-sm text-white ${item?.status === "Active" ? "bg-green-400" : "bg-red-400"
+                                                    }`}
+                                            >
+                                                {item.status}
+                                            </span>
+                                        </div>
+
                                     </Box>
                                 ))
                             ) : (
@@ -450,7 +460,7 @@ const CanteenPosSystem = () => {
                         </Box>
                     </Paper>
                 </div>
-            {/* </Grid> */}
+                {/* </Grid> */}
             </div>
 
             {openFaceId && (
