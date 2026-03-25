@@ -79,7 +79,7 @@ export default function InmateManagement() {
 
     try {
       await deleteStudentMutation.mutateAsync(selectedStudent.id);
-      enqueueSnackbar("Student deleted successfully", { variant: "success" });
+      enqueueSnackbar("Inmate deleted successfully", { variant: "success" });
       closeDeleteModal();
     } catch (err) {
       enqueueSnackbar(err?.response?.data?.message || "Delete failed", { variant: "error" });
@@ -178,7 +178,7 @@ export default function InmateManagement() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Inmate Management</h1>
-              <p className="text-gray-600 text-sm">Manage student profiles and demographics</p>
+              <p className="text-gray-600 text-sm">Manage inmate profiles and demographics</p>
               <p className="text-xs text-slate-500">{isFetching && !isLoading ? "Updating..." : ""}</p>
             </div>
 
@@ -255,7 +255,7 @@ export default function InmateManagement() {
 
       <ConfirmDeleteDialog
         open={deleteOpen}
-        title="Delete Student"
+        title="Delete Inmate"
         description="Are you sure you want to delete this user? This action cannot be undone."
         itemName={selectedStudent?.student_name}
         subText={selectedStudent?.registration_number}

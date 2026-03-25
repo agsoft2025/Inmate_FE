@@ -82,7 +82,7 @@ export default function FinancialManagement() {
 
   const onSubmit = (values) => {
     if (!student?._id) {
-      enqueueSnackbar("Please enter a valid Student ID (e.g. STU001)", {
+      enqueueSnackbar("Please enter a valid Inmate ID (e.g. STU001)", {
         variant: "warning",
       });
       return;
@@ -207,7 +207,7 @@ export default function FinancialManagement() {
               <div className="mt-1 text-xs text-gray-500">
                 {studentQuery.isFetching ? "Searching..." : ""}
                 {!studentQuery.isFetching && exactData?.length >= 3 && !student && (
-                  <span className="text-red-500">No student found</span>
+                  <span className="text-red-500">No inmate found</span>
                 )}
               </div>
             </Box>

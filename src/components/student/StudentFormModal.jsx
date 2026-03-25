@@ -166,7 +166,7 @@ export default function InmateFormModal({
               enqueueSnackbar(res?.message || "Failed", { variant: "error" });
               return;
             }
-            enqueueSnackbar("Student updated", { variant: "success" });
+            enqueueSnackbar("Inmate updated", { variant: "success" });
             handleClose();
           },
           onError: (err) => {
@@ -183,7 +183,7 @@ export default function InmateFormModal({
             enqueueSnackbar(res?.message || "Failed", { variant: "error" });
             return;
           }
-          enqueueSnackbar("Student created", { variant: "success" });
+          enqueueSnackbar("Inmate created", { variant: "success" });
           handleClose();
         },
         onError: (err) => {

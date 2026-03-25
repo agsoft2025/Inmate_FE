@@ -66,7 +66,7 @@ const CanteenPosSystem = () => {
                     selectedInmateIdRef.current = student._id;
                     setStudentSearchValue(student.inmateId || "");
                 } else {
-                    enqueueSnackbar(res?.message || "Student not found", { variant: "warning" });
+                    enqueueSnackbar(res?.message || "Inmate not found", { variant: "warning" });
                 }
             } catch (err) {
                 if (!alive) return;
@@ -260,12 +260,12 @@ const CanteenPosSystem = () => {
                     </Typography>
                 ) : null}
 
-                {!purchasesLoading && purchasesError && filteredPurchases.length === 0 ? (
+                {/* {!purchasesLoading && purchasesError && filteredPurchases.length === 0 ? (
                     <Typography color="error">
                         Error loading purchases:{" "}
                         {purchasesError?.message || purchasesError?.response?.data?.message}
                     </Typography>
-                ) : null}
+                ) : null} */}
 
                 {!purchasesLoading && filteredPurchases.length > 0 ? (
                     filteredPurchases.map((p) => (
@@ -361,7 +361,7 @@ const CanteenPosSystem = () => {
                     ))
                 ) : !purchasesLoading ? (
                     <Typography align="center" color="text.secondary" sx={{ py: 2 }}>
-                        No purchases found for the searched student
+                        No purchases found for the searched inmate
                     </Typography>
                 ) : null}
             </Paper>
@@ -390,7 +390,7 @@ const CanteenPosSystem = () => {
 
                     {studentFetching ? (
                         <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-                            Searching student...
+                            Searching inmate...
                         </Typography>
                     ) : null}
 
@@ -398,7 +398,7 @@ const CanteenPosSystem = () => {
                         <Typography color="error" variant="body2" sx={{ mt: 1 }}>
                             {studentError?.response?.data?.message ||
                                 studentError?.message ||
-                                "Student fetch failed"}
+                                "Inmate fetch failed"}
                         </Typography>
                     ) : null}
                 </div>

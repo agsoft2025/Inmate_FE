@@ -258,7 +258,7 @@ const UserFormDialog = ({ open, onClose, selectedUser, setFaceidModalOpen, faceI
                     )}
 
                     {/* Face ID Button */}
-                    {(getValues()?.role !== "STUDENT" || selectedUser?.role !== "STUDENT") && <div className="mb-4 grid grid-cols-[90%_10%] gap-2 items-center">
+                    {(getValues()?.role !== "INMATE" || selectedUser?.role !== "INMATE") && <div className="mb-4 grid grid-cols-[90%_10%] gap-2 items-center">
                         <Button type="button" onClick={() => setFaceidModalOpen(true)} className="bg-gray-500! text-white! w-full flex! gap-2! items-center!">
                             <Camera />
                             {hasFace ? "Update Face ID" : "Register Face ID"}
