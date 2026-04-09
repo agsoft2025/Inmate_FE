@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { deleteCookie } from "../utils/cookieUtils";
+import { logoutService } from "../service/authService";
 
 const AuthContext = createContext(null);
 
@@ -40,10 +42,17 @@ export function AuthProvider({ children }) {
     localStorage.setItem("user", JSON.stringify(nextUser));
   };
 
-  const logout = () => {
+  const logout = async () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.clear();
+    const currentUserId = user?.id;
+    try {
+      await logoutService();
+    } catch (error) {
+      console.warn("Logout API failed", error);
+    }
+    deleteCookie("selectedLocation", currentUserId);
     setUser(null);
   };
 

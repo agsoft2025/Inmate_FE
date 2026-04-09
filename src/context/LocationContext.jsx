@@ -1,59 +1,60 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { useLocationsQuery } from "../hooks/useLocationMutation";
+import { getCookie, setCookie } from "../utils/cookieUtils";
 
 const LocationContext = createContext(null);
+const BASE_COOKIE_KEY = "selectedLocation";
 
 export function LocationProvider({ children }) {
-  const { isAuth, booting } = useAuth();
-
+  const { isAuth, booting, user } = useAuth();
   const [selectedLocation, setSelectedLocation] = useState(null);
-
   const locationsQuery = useLocationsQuery(isAuth && !booting);
+  const cookieKeySuffix = user?.id ? user.id : null;
 
-  // restore from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("selectedLocation");
+    if (!cookieKeySuffix) {
+      setSelectedLocation(null);
+      return;
+    }
+    const saved = getCookie(BASE_COOKIE_KEY, cookieKeySuffix);
     if (saved) {
       try {
         setSelectedLocation(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem("selectedLocation");
+        return;
+      } catch (error) {
+        console.error("Failed to parse stored location", error);
       }
     }
-  }, []);
+    setSelectedLocation(null);
+  }, [cookieKeySuffix]);
 
-  // set default from API
   useEffect(() => {
     const list = locationsQuery.data?.data;
-    if (!Array.isArray(list) || list.length === 0) return;
+    if (!Array.isArray(list) || list.length === 0) {
+      return;
+    }
 
-    // 1) if there is a selected location, refresh it from list (updates localStorage too)
     if (selectedLocation?._id) {
       const latest = list.find((x) => x._id === selectedLocation._id);
-
-      // if still exists, update state/localStorage with the latest object
       if (latest) {
-        // avoid unnecessary re-renders
         const changed = JSON.stringify(latest) !== JSON.stringify(selectedLocation);
         if (changed) {
           setSelectedLocation(latest);
-          localStorage.setItem("selectedLocation", JSON.stringify(latest));
+          setCookie(BASE_COOKIE_KEY, JSON.stringify(latest), {}, cookieKeySuffix);
         }
         return;
       }
     }
 
-    // 2) if no selection or it was deleted, pick first as default
     const first = list[0];
     setSelectedLocation(first);
-    localStorage.setItem("selectedLocation", JSON.stringify(first));
+    setCookie(BASE_COOKIE_KEY, JSON.stringify(first), {}, cookieKeySuffix);
   }, [locationsQuery.data, selectedLocation?._id]);
-
 
   const selectLocation = (loc) => {
     setSelectedLocation(loc);
-    localStorage.setItem("selectedLocation", JSON.stringify(loc));
+    setCookie(BASE_COOKIE_KEY, JSON.stringify(loc), {}, cookieKeySuffix);
   };
 
   const value = useMemo(
