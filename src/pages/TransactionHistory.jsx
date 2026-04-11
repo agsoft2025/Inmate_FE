@@ -165,9 +165,16 @@ export default function TransactionHistory() {
                 headerName: "Transfer Amount",
                 flex: 0.7,
                 minWidth: 160,
-                renderCell: (params) => (
-                    <span className="font-semibold text-green-600">{params.value}</span>
-                ),
+                renderCell: (params) => {
+                    const row = params.row;
+                    const isReversed =
+                        row.status === "reversed" || row.raw?.isReversed;
+                    return (
+                        <span className={`font-semibold ${isReversed ? "text-red-600" : "text-green-600"}`}>
+                            {params.value}
+                        </span>
+                    );
+                },
             },
             {
                 field: "createdAt",

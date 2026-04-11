@@ -9,7 +9,7 @@ const BASE_COOKIE_KEY = "selectedLocation";
 export function LocationProvider({ children }) {
   const { isAuth, booting, user } = useAuth();
   const [selectedLocation, setSelectedLocation] = useState(null);
-  const locationsQuery = useLocationsQuery(isAuth && !booting);
+  const locationsQuery = useLocationsQuery(isAuth && !booting, user?.id);
   const cookieKeySuffix = user?.id ? user.id : null;
 
   useEffect(() => {

@@ -23,7 +23,10 @@ import { EmptyStudentPanel } from "../components/finanicalManagement/EmptyStuden
 
 const schema = yup.object({
   query: yup.string().required("Inmate ID is required"), // STU001
-  depositType: yup.string().required("Deposit Type is required"),
+  depositType: yup
+    .string()
+    .oneOf(["Bank","Cash"], "Only bank or cash deposits are accepted")
+    .required("Deposit Type is required"),
   relationShipId: yup.string().required("Relationship is required"),
   depositAmount: yup
     .number()
@@ -31,11 +34,7 @@ const schema = yup.object({
     .positive("Amount must be positive")
     .required("Deposit amount is required"),
   remarks: yup.string().required("Remarks are required"),
-  fileIds: yup
-    .array()
-    .of(yup.string().required())
-    .min(1, "Please upload at least 1 file")
-    .required("Please upload at least 1 file"),
+  fileIds: yup.array().of(yup.string()).default([]),
 });
 
 export default function FinancialManagement() {
@@ -55,7 +54,7 @@ export default function FinancialManagement() {
     resolver: yupResolver(schema),
     defaultValues: {
       query: "",
-      depositType: "",
+      depositType: "Bank",
       relationShipId: "",
       depositAmount: "",
       remarks: "",
@@ -105,7 +104,7 @@ export default function FinancialManagement() {
           enqueueSnackbar("Deposit processed successfully", { variant: "success" });
           reset({
             query: "",
-            depositType: "",
+            depositType: "Bank",
             relationShipId: "",
             depositAmount: "",
             remarks: "",
@@ -226,8 +225,8 @@ export default function FinancialManagement() {
                   error={!!errors.depositType}
                   helperText={errors.depositType?.message}
                 >
-                  <MenuItem value="">Select</MenuItem>
                   <MenuItem value="Bank">Bank</MenuItem>
+                  <MenuItem value="Cash">Cash</MenuItem>
                 </TextField>
               )}
             />
@@ -281,7 +280,7 @@ export default function FinancialManagement() {
 
             <Box>
               <Typography variant="subtitle2" className="mb-1">
-                Upload Files <span className="text-red-500">*</span>
+                Upload Files (optional)
               </Typography>
 
               <TextField
@@ -289,19 +288,17 @@ export default function FinancialManagement() {
                 size="small"
                 type="file"
                 inputProps={{ multiple: true }}
-                error={!!errors.fileIds}
-                helperText={errors.fileIds?.message}
                 onChange={async (e) => {
                   const files = Array.from(e.target.files || []);
                   if (!files.length) return;
 
                   const ids = await uploadFiles(files);
 
-                  // ✅ append newly uploaded ids to existing ids
+                  // append newly uploaded ids to existing ids
                   const current = watch("fileIds") || [];
                   setValue("fileIds", [...current, ...ids], { shouldValidate: true });
 
-                  // ✅ allow re-selecting the same file later
+                  // allow re-selecting the same file later
                   e.target.value = "";
                 }}
               />
