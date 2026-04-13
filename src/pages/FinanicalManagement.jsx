@@ -249,7 +249,7 @@ export default function FinancialManagement() {
                   <MenuItem value="mother">Mother</MenuItem>
                   <MenuItem value="father">Father</MenuItem>
                   <MenuItem value="sibling">Sibling</MenuItem>
-                  <MenuItem value="teacher">Teacher</MenuItem>
+                  <MenuItem value="teacher">Advocate</MenuItem>
                   <MenuItem value="friend">Friend</MenuItem>
                   <MenuItem value="other">Other</MenuItem>
                 </TextField>

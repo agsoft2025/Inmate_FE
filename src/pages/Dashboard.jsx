@@ -38,7 +38,7 @@ export default function Dashboard() {
           Dashboard Overview
         </h1>
         <p className="text-sm md:text-base text-slate-500">
-          Real-time school financial statistics
+          Real-time financial statistics
         </p>
       </div>
 

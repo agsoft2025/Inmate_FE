@@ -178,7 +178,7 @@ export default function InmateManagement() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Inmate Management</h1>
-              <p className="text-gray-600 text-sm">Manage student profiles and demographics</p>
+              <p className="text-gray-600 text-sm">Manage Inmate profiles and demographics</p>
               <p className="text-xs text-slate-500">{isFetching && !isLoading ? "Updating..." : ""}</p>
             </div>
 
