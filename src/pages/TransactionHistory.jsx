@@ -44,6 +44,7 @@ export default function TransactionHistory() {
                 totalItems,
                 categories,
                 amount,
+                eventDate: t.eventDate,
                 createdAt: t.createdAt,
                 source: t.source || "-",
                 status: t.isReversed || t.status === "reversed" ? "reversed" : t.status || "Completed",
@@ -181,9 +182,11 @@ export default function TransactionHistory() {
                 headerName: "Date",
                 flex: 1,
                 minWidth: 200,
-                renderCell: (params) => (
-                    <span>{formatDate(params.value)}</span>
-                ),
+                renderCell: (params) => {
+                    const row = params.row;
+                    const dateValue = row.eventDate || params.value;
+                    return <span>{formatDate(dateValue)}</span>;
+                },
             },
             {
                 field: "source",

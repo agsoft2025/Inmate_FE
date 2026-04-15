@@ -17,6 +17,8 @@ export default function LayoutContainer() {
 
   const { selectedLocation } = useLocationCtx();
   const { dbPath } = useDBCtx();
+  const isAdminUser = user?.role === "ADMIN";
+  const showLocationBadge = ["ADMIN", "POS"].includes(user?.role);
 
   return (
     <div className="min-h-screen bg-slate-100 md:grid md:grid-cols-[240px_1fr]">
@@ -56,17 +58,29 @@ export default function LayoutContainer() {
           {/* Right side */}
           <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
             {/* Location */}
-            {user?.role === "ADMIN" && (
+            {showLocationBadge && (
               <div className="flex flex-col items-center">
-                <Button variant="text" onClick={() => setLocationModal(true)}>
-                  <MapPin
-                    className={`w-5 h-5 ${
-                      selectedLocation?.locationName
-                        ? "text-green-500"
-                        : "text-red-500"
-                    }`}
-                  />
-                </Button>
+                {isAdminUser ? (
+                  <Button variant="text" onClick={() => setLocationModal(true)}>
+                    <MapPin
+                      className={`w-5 h-5 ${
+                        selectedLocation?.locationName
+                          ? "text-green-500"
+                          : "text-red-500"
+                      }`}
+                    />
+                  </Button>
+                ) : (
+                  <div className="p-1 rounded-full">
+                    <MapPin
+                      className={`w-5 h-5 ${
+                        selectedLocation?.locationName
+                          ? "text-green-500"
+                          : "text-red-500"
+                      }`}
+                    />
+                  </div>
+                )}
 
                 {selectedLocation?.locationName ? (
                   <span className="text-sm hidden lg:flex font-bold text-green-700 max-w-[120px] truncate">
@@ -108,12 +122,14 @@ export default function LayoutContainer() {
         </main>
       </div>
 
-      <LocationDialog
-        open={locationModal}
-        onClose={() => setLocationModal(false)}
-        isEdit={selectedLocation?._id}
-        selectedLocation={selectedLocation}
-      />
+      {isAdminUser && (
+        <LocationDialog
+          open={locationModal}
+          onClose={() => setLocationModal(false)}
+          isEdit={selectedLocation?._id}
+          selectedLocation={selectedLocation}
+        />
+      )}
 
       <DBLocationModal open={dbModal} onClose={() => setDbModal(false)} />
     </div>

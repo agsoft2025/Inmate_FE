@@ -89,9 +89,12 @@ const BulkOperation = ({ location }) => {
                 }
             }
         } catch (err) {
-            enqueueSnackbar(err?.message || "Upload failed. Check console for details.", {
+            enqueueSnackbar(
+                err?.response?.data?.message || err?.message || "Upload failed. Check console for details.",
+                {
                 variant: "error",
-            });
+                }
+            );
         } finally {
             setSelectedInmateFile(null);
             if (inmateInputRef.current) inmateInputRef.current.value = null;
@@ -126,7 +129,7 @@ const BulkOperation = ({ location }) => {
                         <ul className="space-y-2 text-blue-800">
                             <li className="flex items-start">
                                 <span className="w-2 h-2 bg-blue-600 rounded-full mt-2 mr-3 shrink-0"></span>
-                                <span>Headers: inmateNumber, firstName, lastName, balance, status</span>
+                                <span>Headers: inmateId, firstName, lastName, phonenumber, status (balance optional)</span>
                             </li>
                             <li className="flex items-start">
                                 <span className="w-2 h-2 bg-blue-600 rounded-full mt-2 mr-3 shrink-0"></span>

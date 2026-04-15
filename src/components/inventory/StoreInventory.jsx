@@ -60,6 +60,7 @@ function StoreInventory() {
         vendorName: vp?.vendorName || "",
         gatePassNumber: vp?.gatePassNumber || "",
         vendorValue: vp?.vendorValue ?? "",
+        status: vp?.status || "Active",
         items: record?.items || [],
         _raw: record,
       };
@@ -91,6 +92,21 @@ function StoreInventory() {
       },
       { field: "invoiceNo", headerName: "Invoice", width: 140, align: "center", headerAlign: "center" },
       { field: "vendorName", headerName: "Vendor", width: 170, align: "center", headerAlign: "center" },
+      {
+        field: "status",
+        headerName: "Status",
+        width: 120,
+        align: "center",
+        headerAlign: "center",
+        renderCell: (params) => (
+          <Typography
+            fontWeight={700}
+            sx={{ color: params.value === "Active" ? "success.main" : "error.main" }}
+          >
+            {params.value || "-"}
+          </Typography>
+        ),
+      },
       { field: "gatePassNumber", headerName: "GP Number", width: 140, align: "center", headerAlign: "center" },
       { field: "vendorValue", headerName: "Amount", width: 140, align: "center", headerAlign: "center" },
       {
