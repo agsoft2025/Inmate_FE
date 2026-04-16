@@ -94,9 +94,9 @@ export default function InmateManagement() {
 
       { field: "phonenumber", headerName: "Mobile No", width: 160 },
 
-      { field: "custodyType", headerName: "UT/CT/RP", width: 160 },
+      // { field: "custodyType", headerName: "UT/CT/RP", width: 160 },
 
-      { field: "cellNumber", headerName: "Cell Number", width: 140 },
+      // { field: "cellNumber", headerName: "Cell Number", width: 140 },
 
       {
         field: "balance",
@@ -128,12 +128,12 @@ export default function InmateManagement() {
         ),
       },
 
-      {
-        field: "createdAt",
-        headerName: "Created",
-        width: 190,
-        renderCell: (params) => <span>{formatDate(params.value)}</span>,
-      },
+      // {
+      //   field: "createdAt",
+      //   headerName: "Created",
+      //   width: 190,
+      //   renderCell: (params) => <span>{formatDate(params.value)}</span>,
+      // },
 
       {
         field: "action",
