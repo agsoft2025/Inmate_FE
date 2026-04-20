@@ -63,6 +63,12 @@ const UserManagement = () => {
         return value.fullname || value.username || value.role || "-";
     };
 
+    const formatDateTime = (value) => {
+        if (!value) return "-";
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("en-IN");
+    };
+
     const columns = useMemo(
         () => [
             { field: "username", headerName: "Username", flex: 1, minWidth: 130 },
@@ -86,36 +92,28 @@ const UserManagement = () => {
                 headerName: "Created By",
                 flex: 1,
                 minWidth: 170,
-                valueGetter: (params) => formatUserRef(params.row?.createdBy),
+                valueGetter: (_value, row) => formatUserRef(row?.createdBy),
             },
             {
                 field: "rootAdminId",
                 headerName: "Root Admin",
                 flex: 1,
                 minWidth: 170,
-                valueGetter: (params) => formatUserRef(params.row?.rootAdminId),
+                valueGetter: (_value, row) => formatUserRef(row?.rootAdminId),
             },
             {
                 field: "createdAt",
                 headerName: "Created",
                 flex: 1,
                 minWidth: 180,
-                valueFormatter: (value) => {
-                    if (!value) return "-";
-                    const d = new Date(value);
-                    return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("en-IN");
-                },
+                valueFormatter: (value) => formatDateTime(value),
             },
             {
                 field: "updatedAt",
                 headerName: "Updated",
                 flex: 1,
                 minWidth: 180,
-                valueFormatter: (value) => {
-                    if (!value) return "-";
-                    const d = new Date(value);
-                    return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("en-IN");
-                },
+                valueFormatter: (value) => formatDateTime(value),
             },
             {
                 field: "actions",

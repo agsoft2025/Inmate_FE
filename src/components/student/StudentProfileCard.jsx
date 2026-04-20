@@ -1,11 +1,16 @@
 import React from "react";
 
 function Row({ label, value }) {
+  const displayValue =
+    value && typeof value === "object"
+      ? value.locationName || value.name || value.title || value._id || "-"
+      : value ?? "-";
+
   return (
     <div className="flex justify-between gap-4 py-2 border-b last:border-b-0">
       <div className="text-sm text-gray-500">{label}</div>
       <div className="text-sm font-medium text-gray-900 text-right break-words">
-        {value ?? "-"}
+        {displayValue}
       </div>
     </div>
   );
@@ -13,6 +18,10 @@ function Row({ label, value }) {
 
 export default function StudentProfileCard({ student }) {
   if (!student) return null;
+
+  const location = student?.location_id;
+  const fullName =
+    [student?.firstName, student?.lastName].filter(Boolean).join(" ") || "Inmate";
 
   const dob = student?.dateOfBirth
     ? new Date(student.dateOfBirth).toLocaleDateString()
@@ -28,9 +37,7 @@ export default function StudentProfileCard({ student }) {
       <div className="flex items-center justify-between border-b pb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
-            {student.firstName && student.lastName 
-              ? `${student.firstName} ${student.lastName}` 
-              : "Inmate"}
+            {fullName}
           </h2>
           <p className="text-sm text-gray-500">
             Inmate ID: {student.inmateId}
@@ -53,7 +60,7 @@ export default function StudentProfileCard({ student }) {
         <div className="border rounded-lg p-4">
           <p className="text-xs text-gray-500">Account</p>
           <p className="font-semibold text-gray-800">
-            Balance: ${student?.balance ?? 0}
+            Balance: ₹{student?.balance ?? 0}
           </p>
           <p className="text-xs text-gray-500 mt-1">
             Blocked: {student?.is_blocked === "true" ? "Yes" : "No"}
@@ -63,11 +70,12 @@ export default function StudentProfileCard({ student }) {
 
       {/* Details */}
       <div className="border rounded-lg px-4">
+        <Row label="Name" value={fullName} />
         <Row label="Phone Number" value={student.phonenumber} />
         <Row label="Cell Number" value={student.cellNumber || "N/A"} />
         <Row label="Date of Birth" value={dob} />
         <Row label="Admission Date" value={admissionDate} />
-        <Row label="Location ID" value={student.location_id} />
+        <Row label="Location" value={`${location?.name} - ${location?.locationName}`} />
       </div>
     </div>
   );
