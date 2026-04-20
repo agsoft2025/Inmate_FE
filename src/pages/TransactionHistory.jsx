@@ -1,15 +1,42 @@
 import { useMemo, useState } from "react";
-import { Box, Chip, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
+import {
+    Box,
+    Button,
+    Chip,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    FormControl,
+    InputLabel,
+    MenuItem,
+    Select,
+} from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { useTransactionsQuery } from "../hooks/useTransactionsQuery";
 import { formatDate } from "../hooks/useFormatDate";
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000/").replace(/\/+$/, "");
+
+const getAttachmentUrl = (fileUrl) => {
+    if (!fileUrl) return "";
+    if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+
+    const normalizedPath = String(fileUrl)
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "");
+
+    return `${API_BASE_URL}/${normalizedPath}`;
+};
+
 export default function TransactionHistory() {
     const [range, setRange] = useState("daily");
-
-    // DataGrid uses 0-based page
     const [page, setPage] = useState(0);
     const [pageSize, setPageSize] = useState(10);
+    const [attachmentModal, setAttachmentModal] = useState({
+        open: false,
+        files: [],
+        selectedIndex: 0,
+    });
 
     const apiPage = page + 1;
 
@@ -21,6 +48,25 @@ export default function TransactionHistory() {
 
     const transactions = data?.transactions ?? [];
     const total = data?.totalRecords ?? 0;
+
+    const openAttachmentModal = (files) => {
+        const validFiles = Array.isArray(files) ? files.filter((file) => file?.fileUrl) : [];
+        if (!validFiles.length) return;
+
+        setAttachmentModal({
+            open: true,
+            files: validFiles,
+            selectedIndex: 0,
+        });
+    };
+
+    const closeAttachmentModal = () => {
+        setAttachmentModal({
+            open: false,
+            files: [],
+            selectedIndex: 0,
+        });
+    };
 
     const rows = useMemo(() => {
         return transactions.map((t) => {
@@ -39,6 +85,7 @@ export default function TransactionHistory() {
 
             return {
                 id: t._id,
+                inmateId: t.inmateId || "-",
                 student: `${studentName} - ${regNo}`,
                 products: t.products || [],
                 totalItems,
@@ -61,9 +108,8 @@ export default function TransactionHistory() {
                 flex: 1,
                 minWidth: 180,
                 renderCell: (params) => {
-                    const row = params.row;
-                    const tx = row.raw;
-                    return tx.custodyType ? tx.inmateId + " - " + tx.custodyType : tx.inmateId;
+                    const tx = params.row.raw;
+                    return tx.custodyType ? `${tx.inmateId} - ${tx.custodyType}` : tx.inmateId;
                 },
             },
             {
@@ -77,10 +123,9 @@ export default function TransactionHistory() {
                     const tx = row.raw;
 
                     if (tx.source === "FINANCIAL") {
-                        // Financial: show deposit/withdrawal/work details like your old UI
                         if (tx.type === "deposit") {
                             return (
-                                <div className="whitespace-normal wrap-break-word leading-5 py-2">
+                                <div className="whitespace-normal break-words leading-5 py-2">
                                     <div>
                                         <b>Deposit Type:</b> <span className="text-gray-600">{tx.depositType || "-"}</span>
                                     </div>
@@ -90,9 +135,10 @@ export default function TransactionHistory() {
                                 </div>
                             );
                         }
+
                         if (tx.type === "withdrawal") {
                             return (
-                                <div className="whitespace-normal wrap-break-word leading-5 py-2">
+                                <div className="whitespace-normal break-words leading-5 py-2">
                                     <div>
                                         <b>Withdrawal Type:</b>{" "}
                                         <span className="text-gray-600">{tx.depositType || "-"}</span>
@@ -103,8 +149,9 @@ export default function TransactionHistory() {
                                 </div>
                             );
                         }
+
                         return (
-                            <div className="whitespace-normal wrap-break-word leading-5 py-2">
+                            <div className="whitespace-normal break-words leading-5 py-2">
                                 <div>
                                     <b>Work Assignment:</b>{" "}
                                     <span className="text-gray-600">{tx?.workAssignId?.name || "-"}</span>
@@ -117,20 +164,19 @@ export default function TransactionHistory() {
                         );
                     }
 
-                    // POS/Products
                     const products = tx.products || [];
                     if (!products.length) return "-";
 
                     return (
-                        <div className="whitespace-normal wrap-break-word leading-5 py-2">
+                        <div className="whitespace-normal break-words leading-5 py-2">
                             {products.map((p) => (
                                 <div key={p._id}>
                                     <b>{p?.productId?.itemName || "-"}</b>{" "}
-                                    <span className="text-gray-500">× {p.quantity}</span>{" "}
-                                    <span className="text-gray-400">(₹{p?.productId?.price || 0} each)</span>
+                                    <span className="text-gray-500">x {p.quantity}</span>{" "}
+                                    <span className="text-gray-400">(Rs {p?.productId?.price || 0} each)</span>
                                 </div>
                             ))}
-                            <div className="text-xs text-gray-500 mt-1">Total items: {row.totalItems}</div>
+                            <div className="mt-1 text-xs text-gray-500">Total items: {row.totalItems}</div>
                         </div>
                     );
                 },
@@ -144,7 +190,6 @@ export default function TransactionHistory() {
                 renderCell: (params) => {
                     const tx = params.row.raw;
 
-                    // Financial -> show type badge
                     if (tx.source === "FINANCIAL") {
                         return <Chip size="small" label={tx.type || "-"} variant="outlined" />;
                     }
@@ -162,14 +207,35 @@ export default function TransactionHistory() {
                 },
             },
             {
+                field: "attachments",
+                headerName: "Attachments",
+                flex: 0.8,
+                minWidth: 150,
+                sortable: false,
+                renderCell: (params) => {
+                    const files = params.row.raw?.fileIds || [];
+                    if (!files.length) return "-";
+
+                    return (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openAttachmentModal(files)}
+                        >
+                            View
+                        </Button>
+                    );
+                },
+            },
+            {
                 field: "amount",
                 headerName: "Transfer Amount",
                 flex: 0.7,
                 minWidth: 160,
                 renderCell: (params) => {
                     const row = params.row;
-                    const isReversed =
-                        row.status === "reversed" || row.raw?.isReversed;
+                    const isReversed = row.status === "reversed" || row.raw?.isReversed;
+
                     return (
                         <span className={`font-semibold ${isReversed ? "text-red-600" : "text-green-600"}`}>
                             {params.value}
@@ -221,80 +287,133 @@ export default function TransactionHistory() {
         []
     );
 
+    const selectedFile = attachmentModal.files[attachmentModal.selectedIndex];
+
     return (
-        <div className="w-full bg-gray-50 px-4 overflow-x-hidden">
-            <div className="px-0 md:px-4 lg:px-8 py-4">
-                <div className="max-w-8xl mx-auto space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Transaction History</h1>
-                            <p className="text-gray-600 text-sm md:text-base">
-                                Monitor system statistics and recent activities
-                            </p>
-                            <p className="text-xs text-slate-500">
-                                {isFetching && !isLoading ? "Updating..." : ""}
-                            </p>
+        <>
+            <div className="w-full bg-gray-50 px-4 overflow-x-hidden">
+                <div className="px-0 py-4 md:px-4 lg:px-8">
+                    <div className="mx-auto max-w-8xl space-y-6">
+                        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                            <div>
+                                <h1 className="text-2xl font-bold text-gray-900">Transaction History</h1>
+                                <p className="text-sm text-gray-600 md:text-base">
+                                    Monitor system statistics and recent activities
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                    {isFetching && !isLoading ? "Updating..." : ""}
+                                </p>
+                            </div>
+
+                            <FormControl size="small" sx={{ minWidth: 160 }}>
+                                <InputLabel>Range</InputLabel>
+                                <Select
+                                    label="Range"
+                                    value={range}
+                                    onChange={(e) => {
+                                        setRange(e.target.value);
+                                        setPage(0);
+                                    }}
+                                >
+                                    <MenuItem value="daily">Daily</MenuItem>
+                                    <MenuItem value="weekly">Weekly</MenuItem>
+                                    <MenuItem value="monthly">Monthly</MenuItem>
+                                    <MenuItem value="yearly">Yearly</MenuItem>
+                                </Select>
+                            </FormControl>
                         </div>
 
-                        {/* Range filter */}
-                        <FormControl size="small" sx={{ minWidth: 160 }}>
-                            <InputLabel>Range</InputLabel>
-                            <Select
-                                label="Range"
-                                value={range}
-                                onChange={(e) => {
-                                    setRange(e.target.value);
-                                    setPage(0);
-                                }}
-                            >
-                                <MenuItem value="daily">Daily</MenuItem>
-                                <MenuItem value="weekly">Weekly</MenuItem>
-                                <MenuItem value="monthly">Monthly</MenuItem>
-                                <MenuItem value="yearly">Yearly</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </div>
+                        <div className="rounded-xl bg-white p-3 shadow">
+                            <Box sx={{ height: "calc(100vh - 260px)", width: "100%" }}>
+                                <DataGrid
+                                    rows={rows}
+                                    columns={columns}
+                                    loading={isLoading || isFetching}
+                                    pagination
+                                    paginationMode="server"
+                                    rowCount={total}
+                                    pageSizeOptions={[10, 20, 50]}
+                                    paginationModel={{ page, pageSize }}
+                                    onPaginationModelChange={(model) => {
+                                        if (model.pageSize !== pageSize) {
+                                            setPage(0);
+                                            setPageSize(model.pageSize);
+                                            return;
+                                        }
 
-                    {/* Grid */}
-                    <div className="bg-white rounded-xl shadow p-3">
-                        <Box sx={{ height: "calc(100vh - 260px)", width: "100%" }}>
-                            <DataGrid
-                                rows={rows}
-                                columns={columns}
-                                loading={isLoading || isFetching}
-                                pagination
-                                paginationMode="server"
-                                rowCount={total}
-                                pageSizeOptions={[10, 20, 50]}
-                                paginationModel={{ page, pageSize }}
-                                onPaginationModelChange={(model) => {
-                                    // reset page if size changes
-                                    if (model.pageSize !== pageSize) {
-                                        setPage(0);
-                                        setPageSize(model.pageSize);
-                                        return;
-                                    }
-                                    if (model.page !== page) setPage(model.page);
-                                }}
-                                disableRowSelectionOnClick
-                                getRowId={(row) => row.id}
-                                getRowHeight={() => "auto"} // ✅ allow multi-line cells
-                                sx={{
-                                    "& .MuiDataGrid-cell": {
-                                        display: "flex",
-                                        alignItems: "center",   // ✅ center vertically
-                                        whiteSpace: "normal",
-                                        lineHeight: 1.5,
-                                        py: 1,
-                                    },
-                                    "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f8fafc" },
-                                }}
-                            />
-                        </Box>
+                                        if (model.page !== page) setPage(model.page);
+                                    }}
+                                    disableRowSelectionOnClick
+                                    getRowId={(row) => row.id}
+                                    getRowHeight={() => "auto"}
+                                    sx={{
+                                        "& .MuiDataGrid-cell": {
+                                            display: "flex",
+                                            alignItems: "center",
+                                            whiteSpace: "normal",
+                                            lineHeight: 1.5,
+                                            py: 1,
+                                        },
+                                        "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f8fafc" },
+                                    }}
+                                />
+                            </Box>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            <Dialog open={attachmentModal.open} onClose={closeAttachmentModal} fullWidth maxWidth="lg">
+                <DialogTitle>Attachment Preview</DialogTitle>
+                <DialogContent dividers>
+                    {attachmentModal.files.length > 0 && (
+                        <div className="flex flex-col gap-4 md:flex-row">
+                            <div className="flex gap-3 overflow-x-auto md:w-56 md:flex-col md:overflow-y-auto">
+                                {attachmentModal.files.map((file, index) => {
+                                    const previewUrl = getAttachmentUrl(file.fileUrl);
+                                    const isActive = attachmentModal.selectedIndex === index;
+
+                                    return (
+                                        <button
+                                            key={file._id || `${file.fileUrl}-${index}`}
+                                            type="button"
+                                            onClick={() =>
+                                                setAttachmentModal((prev) => ({
+                                                    ...prev,
+                                                    selectedIndex: index,
+                                                }))
+                                            }
+                                            className={`shrink-0 overflow-hidden rounded-lg border bg-white p-1 transition ${
+                                                isActive
+                                                    ? "border-blue-500 ring-2 ring-blue-100"
+                                                    : "border-slate-200"
+                                            }`}
+                                        >
+                                            <img
+                                                src={previewUrl}
+                                                alt={`Attachment ${index + 1}`}
+                                                className="h-20 w-20 rounded object-cover md:h-24 md:w-full"
+                                            />
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-xl bg-slate-100 p-4">
+                                {selectedFile ? (
+                                    <img
+                                        src={getAttachmentUrl(selectedFile.fileUrl)}
+                                        alt={`Attachment ${attachmentModal.selectedIndex + 1}`}
+                                        className="max-h-[70vh] max-w-full rounded-lg object-contain shadow"
+                                    />
+                                ) : (
+                                    <span className="text-sm text-slate-500">No attachment selected</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
