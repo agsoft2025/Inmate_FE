@@ -1,13 +1,15 @@
-import { Edit, Plus, Trash2 } from 'lucide-react'
-import React, { useMemo, useState } from 'react'
-import { useDeleteUserMutation, useUsersQuery } from '../hooks/useUsersQuery';
-import { Box, Chip } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
-import ConfirmDeleteDialog from '../components/commonModals/ConfirmDeleteDialog';
-import UserFormDialog from '../components/user/UserFormDialog';
-import FaceRecognition from '../components/faceIdComponent/FaceID';
+import { Edit, Plus, Trash2 } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { useSnackbar } from "notistack";
+import { Box, Chip } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
+import { useDeleteUserMutation, useUsersQuery } from "../hooks/useUsersQuery";
+import ConfirmDeleteDialog from "../components/commonModals/ConfirmDeleteDialog";
+import UserFormDialog from "../components/user/UserFormDialog";
+import FaceRecognition from "../components/faceIdComponent/FaceID";
 
 const UserManagement = () => {
+    const { enqueueSnackbar } = useSnackbar();
 
     const [page, setPage] = useState(0);
     const [pageSize, setPageSize] = useState(10);
@@ -20,7 +22,7 @@ const UserManagement = () => {
     const deleteMutation = useDeleteUserMutation();
 
     const { data, isLoading, isFetching } = useUsersQuery({
-        page: page + 1,     // API expects 1-based page
+        page: page + 1,
         limit: pageSize,
     });
 
@@ -42,20 +44,24 @@ const UserManagement = () => {
             await deleteMutation.mutateAsync(selectedUser._id);
             setDeleteOpen(false);
             enqueueSnackbar("User deleted successfully", { variant: "success" });
-
             closeDeleteModal();
         } catch (error) {
-            enqueueSnackbar(
-                error?.response?.data?.message || "Failed to delete user",
-                { variant: "error" }
-            );
+            enqueueSnackbar(error?.response?.data?.message || "Failed to delete user", {
+                variant: "error",
+            });
         }
     };
 
     const handleEdit = (user) => {
         setSelectedUser(user);
         setOpen(true);
-    }
+    };
+
+    const formatUserRef = (value) => {
+        if (!value) return "-";
+        if (typeof value === "string") return value;
+        return value.fullname || value.username || value.role || "-";
+    };
 
     const columns = useMemo(
         () => [
@@ -74,6 +80,20 @@ const UserManagement = () => {
                         sx={{ textTransform: "capitalize" }}
                     />
                 ),
+            },
+            {
+                field: "createdBy",
+                headerName: "Created By",
+                flex: 1,
+                minWidth: 170,
+                valueGetter: (params) => formatUserRef(params.row?.createdBy),
+            },
+            {
+                field: "rootAdminId",
+                headerName: "Root Admin",
+                flex: 1,
+                minWidth: 170,
+                valueGetter: (params) => formatUserRef(params.row?.rootAdminId),
             },
             {
                 field: "createdAt",
@@ -107,11 +127,12 @@ const UserManagement = () => {
                 align: "center",
                 headerAlign: "center",
                 renderCell: (params) => (
-                    
                     <div className="flex items-center justify-center h-full w-full gap-3">
                         <button
                             onClick={() => handleEdit(params.row)}
-                            className={`text-blue-600 hover:text-blue-800 cursor-pointer ${params.row.role === "INMATE" ? "text-gray-600" : ""}`}
+                            className={`text-blue-600 hover:text-blue-800 cursor-pointer ${
+                                params.row.role === "INMATE" ? "text-gray-600" : ""
+                            }`}
                             disabled={params.row.role === "INMATE"}
                         >
                             <Edit size={18} />
@@ -125,24 +146,28 @@ const UserManagement = () => {
                         </button>
                     </div>
                 ),
-            }
-
+            },
         ],
         []
     );
 
     return (
-        <div className='p-2 md:p-6'>
-            <div className='flex flex-col md:flex-row justify-between items-start md:items-center m-3 md:m-0'>
+        <div className="p-2 md:p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center m-3 md:m-0">
                 <div>
-                    <h1 className='text-2xl text-primary font-bold'>User Management</h1>
+                    <h1 className="text-2xl text-primary font-bold">User Management</h1>
                     <h3>Monitor Users</h3>
                 </div>
-                <button className='bg-primary px-4 py-2 text-white rounded-md flex items-center gap-3 mx-auto md:mx-0'
-                    onClick={() => { setSelectedUser(null); setOpen(true) }}
+                <button
+                    className="bg-primary px-4 py-2 text-white rounded-md flex items-center gap-3 mx-auto md:mx-0"
+                    onClick={() => {
+                        setSelectedUser(null);
+                        setOpen(true);
+                    }}
                 >
                     <Plus />
-                    Add user</button>
+                    Add user
+                </button>
             </div>
 
             <Box sx={{ height: "calc(100vh - 260px)", width: "100%" }} className="bg-white rounded-2xl shadow-sm mt-3">
@@ -153,7 +178,7 @@ const UserManagement = () => {
                     loading={isLoading || isFetching}
                     pagination
                     paginationMode="server"
-                    rowCount={data?.totalItems ?? 0} // ✅ MUST come from backend
+                    rowCount={data?.totalItems ?? 0}
                     paginationModel={{ page, pageSize }}
                     onPaginationModelChange={(model) => {
                         setPage(model.page);
@@ -166,7 +191,6 @@ const UserManagement = () => {
                         "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f9fafb" },
                     }}
                 />
-
             </Box>
 
             <ConfirmDeleteDialog
@@ -182,19 +206,28 @@ const UserManagement = () => {
 
             <UserFormDialog
                 open={open}
-                onClose={() => {setSelectedUser(null); setOpen(false);  }}
+                onClose={() => {
+                    setSelectedUser(null);
+                    setOpen(false);
+                }}
                 selectedUser={selectedUser}
                 setFaceidModalOpen={setFaceidModalOpen}
                 faceIdData={faceIdData}
                 setSelectedUser={setSelectedUser}
             />
 
-            {/* Face ID Modal */}
             {faceidModalOpen && (
-                <FaceRecognition mode="register" open={faceidModalOpen} setOpen={setFaceidModalOpen} faceIdData={faceIdData} setFaceIdData={setFaceIdData} setSelectedUser={setSelectedUser} />
+                <FaceRecognition
+                    mode="register"
+                    open={faceidModalOpen}
+                    setOpen={setFaceidModalOpen}
+                    faceIdData={faceIdData}
+                    setFaceIdData={setFaceIdData}
+                    setSelectedUser={setSelectedUser}
+                />
             )}
         </div>
-    )
-}
+    );
+};
 
-export default UserManagement
+export default UserManagement;

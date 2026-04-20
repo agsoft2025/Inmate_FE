@@ -14,13 +14,16 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import { useDeleteFaceRecognitionMutation, useUserByIdQuery, useUserMutation } from "../../hooks/useUsersQuery";
 import { useLocationCtx } from "../../context/LocationContext";
+import { useAuth } from "../../context/AuthContext";
 import { Camera, Trash2 } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import { useQueryClient } from "@tanstack/react-query";
+import { createAdminCredential } from "../../service/userService";
 
 const UserFormDialog = ({ open, onClose, selectedUser, setFaceidModalOpen, faceIdData, setSelectedUser }) => {
     const mutation = useUserMutation();
     const { selectedLocation } = useLocationCtx();
+    const { user } = useAuth();
 
     const deleteMutation = useDeleteFaceRecognitionMutation();
     const { data: userById } = useUserByIdQuery(selectedUser?._id);
@@ -134,14 +137,14 @@ const UserFormDialog = ({ open, onClose, selectedUser, setFaceidModalOpen, faceI
     }, [selectedUser, reset]);
 
     const onSubmit = async (values) => {
-        // base payload (common)
         const payload = {
             username: values.username,
             fullname: values.fullname,
             role: values.role,
-            locationId: selectedLocation?._id || selectedLocation?.id, // ✅ consistent
             descriptor: faceIdData ? faceIdData : null,
         };
+
+        const isRootAdminCreate = !selectedUser && (user?.role || "").toUpperCase() === "SUPER ADMIN" && values.role === "ADMIN";
 
         // ✅ CREATE: password required
         if (!selectedUser) {
@@ -155,10 +158,23 @@ const UserFormDialog = ({ open, onClose, selectedUser, setFaceidModalOpen, faceI
         }
 
         try {
-            await mutation.mutateAsync({
-                id: selectedUser?._id,
-                payload,
-            });
+            if (isRootAdminCreate) {
+                await createAdminCredential({
+                    username: payload.username,
+                    fullname: payload.fullname,
+                    password: payload.password,
+                    descriptor: payload.descriptor,
+                });
+                queryClient.invalidateQueries({ queryKey: ["users"] });
+            } else {
+                await mutation.mutateAsync({
+                    id: selectedUser?._id,
+                    payload: {
+                        ...payload,
+                        locationId: selectedLocation?._id || selectedLocation?.id,
+                    },
+                });
+            }
             onClose();
         } catch (err) {
             console.error(err);

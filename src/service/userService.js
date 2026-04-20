@@ -17,6 +17,11 @@ export const createUser = async (payload) => {
   return res.data;
 };
 
+export const createAdminCredential = async (payload) => {
+  const res = await api.post("admin", payload);
+  return res.data;
+};
+
 export const updateUser = async ({ id, payload }) => {
   const res = await api.put(`users/${id}`, payload);
   return res.data;

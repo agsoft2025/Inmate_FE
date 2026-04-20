@@ -42,7 +42,10 @@ export default function Sidebar({ isOpen = false, onClose }) {
   ];
 
   const allowedItems = sideBarItems.filter((item) =>
-    item.roles?.some((r) => r.toUpperCase() === role)
+    item.roles?.some((r) => {
+      const normalized = r.toUpperCase();
+      return normalized === role || (role === "SUPER ADMIN" && normalized === "ADMIN");
+    })
   );
 
   const AsideContent = (
