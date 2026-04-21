@@ -10,6 +10,8 @@ import { useDBCtx } from "../context/DBContext";
 import Sidebar from "../components/Sidebar.jsx";
 
 export default function LayoutContainer() {
+  const appVersion = import.meta.env.VITE_APP_VERSION || "1.0.0";
+  const copyrightYear = new Date().getFullYear();
   const { user } = useAuth();
   const [locationModal, setLocationModal] = useState(false);
   const [dbModal, setDbModal] = useState(false);
@@ -21,17 +23,12 @@ export default function LayoutContainer() {
   const showLocationBadge = ["ADMIN", "POS"].includes(user?.role);
 
   return (
-    <div className="min-h-screen bg-slate-100 md:grid md:grid-cols-[240px_1fr]">
-      {/* Sidebar (desktop + mobile drawer) */}
+    <div className="min-h-dvh bg-slate-100 md:grid md:grid-cols-[240px_1fr]">
       <Sidebar isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 
-      {/* Main */}
-      <div className="flex flex-col min-w-0">
-        {/* Topbar */}
-        <header className="h-16 bg-white border-b flex items-center justify-between px-2 md:px-5 min-w-0">
-          {/* Left side */}
+      <div className="flex min-h-dvh min-w-0 flex-col">
+        <header className="h-16 min-h-16 bg-white border-b flex items-center justify-between px-2 md:px-5 min-w-0">
           <div className="flex items-center gap-3 md:gap-4 min-w-0">
-            {/* Hamburger (mobile only) */}
             <button
               className="md:hidden p-2 rounded-lg hover:bg-slate-100 flex-shrink-0"
               onClick={() => setMenuOpen(true)}
@@ -44,29 +41,22 @@ export default function LayoutContainer() {
               <User className="text-white w-4 h-4" />
             </div>
 
-            {/* Name + role (shrink-safe) */}
             <div className="min-w-0">
-              <h1 className="text-md font-semibold truncate">
-                {user?.fullName}
-              </h1>
+              <h1 className="text-md font-semibold truncate">{user?.fullName}</h1>
               <h3 className="text-green-500 text-sm md:text-md font-semibold truncate">
                 {user?.role}
               </h3>
             </div>
           </div>
 
-          {/* Right side */}
           <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
-            {/* Location */}
             {showLocationBadge && (
               <div className="flex flex-col items-center">
                 {isAdminUser ? (
                   <Button variant="text" onClick={() => setLocationModal(true)}>
                     <MapPin
                       className={`w-5 h-5 ${
-                        selectedLocation?.locationName
-                          ? "text-green-500"
-                          : "text-red-500"
+                        selectedLocation?.locationName ? "text-green-500" : "text-red-500"
                       }`}
                     />
                   </Button>
@@ -74,9 +64,7 @@ export default function LayoutContainer() {
                   <div className="p-1 rounded-full">
                     <MapPin
                       className={`w-5 h-5 ${
-                        selectedLocation?.locationName
-                          ? "text-green-500"
-                          : "text-red-500"
+                        selectedLocation?.locationName ? "text-green-500" : "text-red-500"
                       }`}
                     />
                   </div>
@@ -94,14 +82,11 @@ export default function LayoutContainer() {
               </div>
             )}
 
-            {/* DB Location */}
             {user?.role === "ADMIN" && (
               <div className="flex flex-col items-center">
                 <Button variant="text" onClick={() => setDbModal(true)}>
                   <DatabaseZap
-                    className={`w-5 h-5 ${
-                      dbPath ? "text-green-500" : "text-red-500"
-                    }`}
+                    className={`w-5 h-5 ${dbPath ? "text-green-500" : "text-red-500"}`}
                   />
                 </Button>
 
@@ -117,9 +102,16 @@ export default function LayoutContainer() {
           </div>
         </header>
 
-        <main className="flex-1 m-0 md:m-4 min-w-0">
+        <main className="min-w-0 flex-1 px-0 md:px-4 md:pt-4">
           <Outlet />
         </main>
+
+        <footer className="border-t bg-white px-6 py-3 text-xs text-slate-600">
+          <div className="flex flex-col gap-1 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+            <span>{`Copyright (c) ${copyrightYear} Inmate Management Portal. All rights reserved.`}</span>
+            <span className="font-medium text-slate-700">{`Version ${appVersion}`}</span>
+          </div>
+        </footer>
       </div>
 
       {isAdminUser && (
