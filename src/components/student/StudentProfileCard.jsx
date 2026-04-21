@@ -59,10 +59,10 @@ export default function StudentProfileCard({ student }) {
 
         <div className="border rounded-lg p-4">
           <p className="text-xs text-gray-500">Account</p>
-          <p className="font-semibold text-gray-800">
+          <p className="font-bold text-xl text-gray-800">
             Balance: ₹{student?.balance ?? 0}
           </p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-black-500 mt-1">
             Blocked: {student?.is_blocked === "true" ? "Yes" : "No"}
           </p>
         </div>
