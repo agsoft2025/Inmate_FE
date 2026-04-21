@@ -39,24 +39,39 @@ export default function InmateManagement() {
     limit: pageSize,
   });
   const total = data?.totalItems ?? 0;
+  const transactions = data?.transactions ?? [];
 
   const inmateRows = useMemo(() => {
-    const list = data?.data || [];
-    return list.map((inmate) => ({
-      id: inmate._id,                         // ✅ DataGrid needs id
-      inmateId: inmate.inmateId || "-",
-      fullName: `${inmate.firstName || ""} ${inmate.lastName || ""}`.trim() || "-",
-      phonenumber: inmate.phonenumber || "-",
-      custodyType: inmate.custodyType || "-",
-      cellNumber: inmate.cellNumber || "-",
-      balance: inmate.balance ?? 0,
-      status: inmate.status || "-",
-      createdAt: inmate.createdAt,
+        return transactions.map((t) => {
+            const studentName = t?.student_id?.student_name || "-";
+            const regNo = t?.student_id?.registration_number || "-";
 
-      // keep original if you need it in edit modal
-      raw: inmate,
-    }));
-  }, [data]);
+            const categories = t?.products?.length
+                ? [...new Set(t.products.map((p) => p?.productId?.category).filter(Boolean))]
+                : [];
+
+            const totalItems = t?.products?.length
+                ? t.products.reduce((sum, p) => sum + (p?.quantity || 0), 0)
+                : 0;
+
+            const amount = t.totalAmount || t.wageAmount || t.depositAmount || 0;
+
+            return {
+                id: t._id,
+                inmateId: t.inmateId || "-",
+                student: `${studentName} - ${regNo}`,
+                products: t.products || [],
+                totalItems,
+                categories,
+                amount,
+                eventDate: t.eventDate,
+                createdAt: t.createdAt,
+                source: t.source || "-",
+                status: t.isReversed || t.status === "reversed" ? "reversed" : t.status || "Completed",
+                raw: t,
+            };
+        });
+    }, [transactions]);
 
 
   const handleEdit = (row) => {
@@ -86,89 +101,192 @@ export default function InmateManagement() {
     }
   };
 
-  const inmateColumns = useMemo(
-    () => [
-      { field: "inmateId", headerName: "Inmate ID", width: 130 },
+      const inmateColumns = useMemo(
+        () => [
+            {
+                field: "inmateId",
+                headerName: "Inmate ID",
+                flex: 1,
+                minWidth: 180,
+                renderCell: (params) => {
+                    const tx = params.row.raw;
+                    return tx.custodyType ? `${tx.inmateId} - ${tx.custodyType}` : tx.inmateId;
+                },
+            },
+            {
+                field: "products",
+                headerName: "Transaction",
+                flex: 2,
+                minWidth: 300,
+                sortable: false,
+                renderCell: (params) => {
+                    const row = params.row;
+                    const tx = row.raw;
 
-      { field: "fullName", headerName: "Name", flex: 1, minWidth: 180 },
+                    if (tx.source === "FINANCIAL") {
+                        if (tx.type === "deposit") {
+                            return (
+                                <div className="whitespace-normal break-words leading-5 py-2">
+                                    <div>
+                                        <b>Deposit Type:</b> <span className="text-gray-600">{tx.depositType || "-"}</span>
+                                    </div>
+                                    <div>
+                                        <b>Relation:</b> <span className="text-gray-600">{tx.relationShipId || "-"}</span>
+                                    </div>
+                                </div>
+                            );
+                        }
 
-      { field: "phonenumber", headerName: "Mobile No", width: 160 },
+                        if (tx.type === "withdrawal") {
+                            return (
+                                <div className="whitespace-normal break-words leading-5 py-2">
+                                    <div>
+                                        <b>Withdrawal Type:</b>{" "}
+                                        <span className="text-gray-600">{tx.depositType || "-"}</span>
+                                    </div>
+                                    <div>
+                                        <b>Relation:</b> <span className="text-gray-600">{tx.relationShipId || "-"}</span>
+                                    </div>
+                                </div>
+                            );
+                        }
 
-      // { field: "custodyType", headerName: "UT/CT/RP", width: 160 },
+                        return (
+                            <div className="whitespace-normal break-words leading-5 py-2">
+                                <div>
+                                    <b>Work Assignment:</b>{" "}
+                                    <span className="text-gray-600">{tx?.workAssignId?.name || "-"}</span>
+                                </div>
+                                <div>
+                                    <b>Hours Worked:</b>{" "}
+                                    <span className="text-gray-600">{tx.hoursWorked ?? "-"}</span>
+                                </div>
+                            </div>
+                        );
+                    }
 
-      // { field: "cellNumber", headerName: "Cell Number", width: 140 },
+                    const products = tx.products || [];
+                    if (!products.length) return "-";
 
-      {
-        field: "balance",
-        headerName: "Balance",
-        width: 130,
-        renderCell: (params) => {
-          const val = Number(params.value ?? 0);
-          return (
-            <span className={`font-semibold ${val > 0 ? "text-green-700" : "text-red-600"}`}>
-              ₹{val}
-            </span>
-          );
-        },
-      },
+                    return (
+                        <div className="whitespace-normal break-words leading-5 py-2">
+                            {products.map((p) => (
+                                <div key={p._id}>
+                                    <b>{p?.productId?.itemName || "-"}</b>{" "}
+                                    <span className="text-gray-500">x {p.quantity}</span>{" "}
+                                    <span className="text-gray-400">(Rs {p?.productId?.price || 0} each)</span>
+                                </div>
+                            ))}
+                            <div className="mt-1 text-xs text-gray-500">Total items: {row.totalItems}</div>
+                        </div>
+                    );
+                },
+            },
+            {
+                field: "categories",
+                headerName: "Categories",
+                flex: 1,
+                minWidth: 200,
+                sortable: false,
+                renderCell: (params) => {
+                    const tx = params.row.raw;
 
-      {
-        field: "status",
-        headerName: "Status",
-        width: 130,
-        renderCell: (params) => (
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${params.value === "active"
-                ? "bg-green-100 text-green-800"
-                : "bg-gray-100 text-gray-800"
-              }`}
-          >
-            {params.value || "-"}
-          </span>
-        ),
-      },
+                    if (tx.source === "FINANCIAL") {
+                        return <Chip size="small" label={tx.type || "-"} variant="outlined" />;
+                    }
 
-      // {
-      //   field: "createdAt",
-      //   headerName: "Created",
-      //   width: 190,
-      //   renderCell: (params) => <span>{formatDate(params.value)}</span>,
-      // },
+                    const categories = params.value || [];
+                    if (!categories.length) return "-";
 
-      {
-        field: "action",
-        headerName: "Action",
-        width: 140,
-        sortable: false,
-        filterable: false,
-        align: "center",
-        renderCell: (params) => (
-          <div className="flex items-center justify-center h-full w-full gap-3">
-            <button
-              onClick={() => {
-                setOpen(true);
-                setSelectedStudent(params.row.raw);
-              }}
-              style={{ border: "none", background: "transparent", cursor: "pointer", color: "#1976d2" }}
-            >
-              <Edit />
-            </button>
+                    return (
+                        <div className="flex flex-wrap gap-1 py-2">
+                            {categories.map((c) => (
+                                <Chip key={c} size="small" label={c} variant="outlined" />
+                            ))}
+                        </div>
+                    );
+                },
+            },
+            {
+                field: "attachments",
+                headerName: "Attachments",
+                flex: 0.8,
+                minWidth: 150,
+                sortable: false,
+                renderCell: (params) => {
+                    const files = params.row.raw?.fileIds || [];
+                    if (!files.length) return "-";
 
-            <button
-              onClick={() => {
-                setSelectedStudent(params.row);  // ✅ store the row (has id)
-                setDeleteOpen(true);            // ✅ open modal
-              }}
-              style={{ border: "none", background: "transparent", cursor: "pointer", color: "red" }}
-            >
-              <Trash2 />
-            </button>
-          </div>
-        ),
-      },
-    ],
-    []
-  );
+                    return (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openAttachmentModal(files)}
+                        >
+                            View
+                        </Button>
+                    );
+                },
+            },
+            {
+                field: "amount",
+                headerName: "Transfer Amount",
+                flex: 0.7,
+                minWidth: 160,
+                renderCell: (params) => {
+                    const row = params.row;
+                    const isReversed = row.status === "reversed" || row.raw?.isReversed;
+
+                    return (
+                        <span className={`font-semibold ${isReversed ? "text-red-600" : "text-green-600"}`}>
+                            {params.value}
+                        </span>
+                    );
+                },
+            },
+            {
+                field: "createdAt",
+                headerName: "Date",
+                flex: 1,
+                minWidth: 200,
+                renderCell: (params) => {
+                    const row = params.row;
+                    const dateValue = row.eventDate || params.value;
+                    return <span>{formatDate(dateValue)}</span>;
+                },
+            },
+            {
+                field: "source",
+                headerName: "Source",
+                flex: 0.8,
+                minWidth: 140,
+                renderCell: (params) => (
+                    <Chip size="small" label={params.value || "-"} variant="outlined" />
+                ),
+            },
+            {
+                field: "status",
+                headerName: "Status",
+                flex: 0.9,
+                minWidth: 180,
+                sortable: false,
+                renderCell: (params) => {
+                    const status = params.value;
+                    const isReversed = status === "reversed";
+
+                    return (
+                        <Chip
+                            size="small"
+                            label={isReversed ? "Transaction reversed" : status}
+                            color={isReversed ? "error" : "default"}
+                            variant={isReversed ? "filled" : "outlined"}
+                        />
+                    );
+                },
+            },
+        ],
+        []
+    );
 
 
   return (
