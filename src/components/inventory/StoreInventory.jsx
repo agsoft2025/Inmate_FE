@@ -12,6 +12,22 @@ import useDebounce from "../../hooks/useDebounce";
 import { useDeleteInventoryMutation, useInventoryQuery } from "../../hooks/useInventoryQuery";
 import StoreInventoryDialog from "./StoreInventoryDialog";
 
+const stackedCellSx = {
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: 0.75,
+  minHeight: "100%",
+  width: "100%",
+  py: 1,
+  textAlign: "center",
+};
+
+const stackedTextSx = {
+  lineHeight: 1.35,
+  overflowWrap: "anywhere",
+};
+
 function StoreInventory() {
   const { enqueueSnackbar } = useSnackbar();
 
@@ -116,9 +132,9 @@ function StoreInventory() {
         sortable: false,
         headerAlign: "center",
         renderCell: (params) => (
-          <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", height: "100%", width: "100%", textAlign: "center" }}>
-            {(params.row?.items || []).map((it) => (
-              <Typography key={it._id} variant="body2">
+          <Box sx={stackedCellSx}>
+            {(params.row?.items || []).map((it, idx) => (
+              <Typography key={it._id || idx} variant="body2" sx={stackedTextSx}>
                 {it.stock}
               </Typography>
             ))}
@@ -132,9 +148,9 @@ function StoreInventory() {
         sortable: false,
         headerAlign: "center",
         renderCell: (params) => (
-          <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", height: "100%", width: "100%", textAlign: "center" }}>
-            {(params.row?.items || []).map((it) => (
-              <Typography key={it._id} variant="body2">
+          <Box sx={stackedCellSx}>
+            {(params.row?.items || []).map((it, idx) => (
+              <Typography key={it._id || idx} variant="body2" sx={stackedTextSx}>
                 {it.itemName}
               </Typography>
             ))}
@@ -148,9 +164,9 @@ function StoreInventory() {
         sortable: false,
         headerAlign: "center",
         renderCell: (params) => (
-          <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", height: "100%", width: "100%", textAlign: "center" }}>
-            {(params.row?.items || []).map((it) => (
-              <Typography key={it._id} variant="body2">
+          <Box sx={stackedCellSx}>
+            {(params.row?.items || []).map((it, idx) => (
+              <Typography key={it._id || idx} variant="body2" sx={stackedTextSx}>
                 {it.sellingPrice}
               </Typography>
             ))}
@@ -267,11 +283,16 @@ function StoreInventory() {
                   setPage(model.page);
                   setPageSize(model.pageSize);
                 }}
+                getRowHeight={() => "auto"}
                 disableRowSelectionOnClick
                 autoHeight
                 sx={{
                   border: 0,
                   "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f9fafb" },
+                  "& .MuiDataGrid-cell": {
+                    alignItems: "stretch",
+                    py: 0.5,
+                  },
                 }}
               />
             </Box>
