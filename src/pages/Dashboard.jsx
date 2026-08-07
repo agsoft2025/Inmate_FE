@@ -1,11 +1,48 @@
+import { useState } from "react";
 import {
   Users,
   Wallet,
   ArrowLeftRight,
   IndianRupee,
   AlertTriangle,
+  MessageCircle,
 } from "lucide-react";
+import { enqueueSnackbar } from "notistack";
 import { useDashboardQuery } from "../hooks/useDashboardQuery";
+import { useSendOutreachMutation } from "../hooks/useSendOutreachMutation";
+import OutreachMessageDialog from "../components/commonModals/OutreachMessageDialog";
+
+// Estimate how many days until an inmate's wallet balance hits zero,
+// based on their average daily spend (returned by the dashboard API from
+// their recent POS transaction history). Returns null when there isn't
+// enough spending data to make a reliable estimate.
+function getDaysToZero(balance, avgDailySpend) {
+  if (balance === undefined || balance === null) return null;
+  if (balance <= 0) return 0;
+  if (!avgDailySpend || avgDailySpend <= 0) return null;
+  return Math.ceil(balance / avgDailySpend);
+}
+
+// Draft a contextual outreach message using the inmate's current balance
+// and Days to Zero estimate. This is only ever a starting point - staff
+// review and edit it in the modal before anything is sent.
+function buildOutreachDraft(inmate, daysToZero) {
+  if (!inmate) return "";
+
+  const name = [inmate.firstName, inmate.lastName].filter(Boolean).join(" ") || "Inmate";
+  const balance = inmate.balance ?? 0;
+
+  let urgency;
+  if (daysToZero === null) {
+    urgency = "is running low";
+  } else if (daysToZero <= 0) {
+    urgency = "has been fully depleted";
+  } else {
+    urgency = `is estimated to reach zero in about ${daysToZero} day${daysToZero === 1 ? "" : "s"}`;
+  }
+
+  return `Dear ${name} (ID: ${inmate.inmateId || "N/A"}), your canteen wallet balance is currently ₹${balance} and ${urgency}. Please arrange a top-up soon to avoid any interruption to canteen purchases. - Facility Administration`;
+}
 
 function StatCard({ title, value, icon: Icon, color }) {
   return (
@@ -25,6 +62,46 @@ function StatCard({ title, value, icon: Icon, color }) {
 export default function Dashboard() {
   const { data, isLoading } = useDashboardQuery();
   const dash = data?.data;
+
+  // Predictive Low-Balance Outreach: modal state + draft-review-send flow.
+  const [outreachInmate, setOutreachInmate] = useState(null);
+  const [outreachDraft, setOutreachDraft] = useState("");
+  const sendOutreachMutation = useSendOutreachMutation();
+
+  const handleDraftOutreach = (inmate) => {
+    const daysToZero = getDaysToZero(inmate.balance, inmate.avgDailySpend);
+    setOutreachInmate(inmate);
+    setOutreachDraft(buildOutreachDraft(inmate, daysToZero));
+  };
+
+  const handleCloseOutreach = () => {
+    if (sendOutreachMutation.isPending) return;
+    setOutreachInmate(null);
+    setOutreachDraft("");
+  };
+
+  // Called only when staff click "Send" inside the review modal - never
+  // triggered automatically.
+  const handleSendOutreach = (editedMessage) => {
+    if (!outreachInmate) return;
+
+    sendOutreachMutation.mutate(
+      { inmateId: outreachInmate.inmateId, message: editedMessage },
+      {
+        onSuccess: () => {
+          enqueueSnackbar("Outreach message sent", { variant: "success" });
+          setOutreachInmate(null);
+          setOutreachDraft("");
+        },
+        onError: (error) => {
+          enqueueSnackbar(
+            error?.response?.data?.message || "Failed to send outreach message",
+            { variant: "error" }
+          );
+        },
+      }
+    );
+  };
 
   if (isLoading) {
     return <div className="p-6 text-gray-500">Loading dashboard...</div>;
@@ -245,26 +322,68 @@ export default function Dashboard() {
             {dash?.lowBalanceInmates?.length === 0 ? (
               <div className="text-sm text-slate-500">No low balance students 🎉</div>
             ) : (
-              dash?.lowBalanceInmates?.map((s) => (
-                <div
-                  key={s._id}
-                  className="flex items-center justify-between gap-3 border rounded-xl p-3 hover:shadow-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">{s.firstName} - {s.lastName}</p>
-                    <p className="text-xs text-slate-500 truncate">{s.inmateId}</p>
-                  </div>
+              dash?.lowBalanceInmates?.map((s) => {
+                const daysToZero = getDaysToZero(s.balance, s.avgDailySpend);
+                const daysToZeroLabel =
+                  daysToZero === null
+                    ? "N/A"
+                    : `${daysToZero} day${daysToZero === 1 ? "" : "s"}`;
+                const daysToZeroClass =
+                  daysToZero === null
+                    ? "text-slate-400"
+                    : daysToZero <= 7
+                    ? "text-red-600"
+                    : "text-amber-600";
 
-                  <span className="shrink-0 text-red-600 font-bold whitespace-nowrap">
-                    ₹ {s.balance}
-                  </span>
-                </div>
-              ))
+                return (
+                  <div
+                    key={s._id}
+                    className="border rounded-xl p-3 hover:shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{s.firstName} - {s.lastName}</p>
+                        <p className="text-xs text-slate-500 truncate">{s.inmateId}</p>
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          Days to Zero:{" "}
+                          <span className={`font-semibold ${daysToZeroClass}`}>
+                            {daysToZeroLabel}
+                          </span>
+                        </p>
+                      </div>
+
+                      <span className="shrink-0 text-red-600 font-bold whitespace-nowrap">
+                        ₹ {s.balance}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleDraftOutreach(s)}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 bg-blue-50 hover:bg-blue-100 rounded-lg px-2.5 py-1.5 transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        Draft Outreach Message
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
 
       </div>
+
+      <OutreachMessageDialog
+        open={Boolean(outreachInmate)}
+        inmate={outreachInmate}
+        defaultMessage={outreachDraft}
+        onClose={handleCloseOutreach}
+        onSend={handleSendOutreach}
+        sending={sendOutreachMutation.isPending}
+      />
     </div>
   );
 }
