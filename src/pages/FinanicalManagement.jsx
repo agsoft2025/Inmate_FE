@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSnackbar } from "notistack";
 import { Controller, useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
@@ -13,13 +13,37 @@ import {
   Button,
   MenuItem,
   Divider,
+  CircularProgress,
+  Chip,
 } from "@mui/material";
+import { ScanLine } from "lucide-react";
 
 import { useStudentExactQuery } from "../hooks/useStudentExactQuery";
 import { useCreateDepositMutation } from "../hooks/useCreateDepositMutation";
 import useDebounce from "../hooks/useDebounce";
 import { InmatePanel } from "../components/finanicalManagement/StudentPanel";
 import { EmptyStudentPanel } from "../components/finanicalManagement/EmptyStudentPanel";
+import { runOcr, parseDepositSlipFields, getConfidenceTier } from "../utils/documentScanUtils";
+
+// Labels shown in the "filled N fields from the deposit slip" confirmation -
+// keys match parseDepositSlipFields()'s return shape.
+const DEPOSIT_FIELD_LABELS = {
+  query: "Inmate ID",
+  depositType: "Deposit Type",
+  relationShipId: "Relationship",
+  depositAmount: "Deposit Amount",
+  remarks: "Remarks",
+};
+
+// Fields highlight with this red border + tinted background when their
+// scanned confidence is under the "low" tier and the user hasn't edited
+// the value since the scan.
+const LOW_CONFIDENCE_SX = {
+  "& .MuiOutlinedInput-root": {
+    backgroundColor: "#fef2f2",
+    "& fieldset": { borderColor: "#ef4444" },
+  },
+};
 
 const schema = yup.object({
   query: yup.string().required("Inmate ID is required"), // STU001
@@ -72,6 +96,18 @@ export default function FinancialManagement() {
 
   const mutation = useCreateDepositMutation();
   const [loading, setLoading] = useState(false);
+
+  // Scan Deposit Slip: OCR + field extraction (separate from the file
+  // upload/attachment flow below - scanning only reads text to pre-fill
+  // fields, it doesn't attach the photo as evidence).
+  const [isExtracting, setIsExtracting] = useState(false);
+  const depositSlipInputRef = useRef(null);
+  const [scannedFileName, setScannedFileName] = useState(null);
+  // Per-field OCR confidence + the value that was in the field right after
+  // the scan, keyed by form field name. A badge only describes the field
+  // it's attached to, and clears itself once the user edits that field's
+  // value away from what the scan produced.
+  const [fieldConfidence, setFieldConfidence] = useState({});
 
   const fileIds = watch("fileIds");
 
@@ -145,6 +181,102 @@ export default function FinancialManagement() {
     }
   }
 
+  // Runs OCR on the selected photo/scan and pre-fills whatever deposit-slip
+  // fields it can confidently read, along with a per-field confidence score
+  // (from Tesseract.js's own word-level confidence where available). Only
+  // ever calls setValue() (and mirrors the Inmate ID into the search box
+  // the same way manual typing does) - never submits the form. The user
+  // reviews/edits everything and clicks the existing "Process Deposit"
+  // button themselves.
+  async function handleDepositSlipFileSelected(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file again later
+    if (!file) return;
+
+    setScannedFileName(file.name);
+    setIsExtracting(true);
+    try {
+      const { text, confidence: pageConfidence, words } = await runOcr(file);
+      const extracted = parseDepositSlipFields(text, words, pageConfidence);
+      const foundFields = Object.keys(extracted);
+
+      foundFields.forEach((key) => {
+        if (key === "query") {
+          setSearchValue(extracted.query.value);
+        }
+        setValue(key, extracted[key].value, { shouldValidate: true, shouldDirty: true });
+      });
+
+      setFieldConfidence((prev) => {
+        const next = { ...prev };
+        foundFields.forEach((key) => {
+          next[key] = { confidence: extracted[key].confidence, scannedValue: extracted[key].value };
+        });
+        return next;
+      });
+
+      if (foundFields.length > 0) {
+        enqueueSnackbar(
+          `Filled ${foundFields.length} field${foundFields.length === 1 ? "" : "s"} from the deposit slip (${foundFields
+            .map((key) => DEPOSIT_FIELD_LABELS[key])
+            .join(", ")}). Please review before submitting - low-confidence fields are highlighted.`,
+          { variant: "info" }
+        );
+      } else {
+        enqueueSnackbar(
+          "Couldn't confidently read any fields from that image - please fill them in manually.",
+          { variant: "warning" }
+        );
+      }
+    } catch (err) {
+      enqueueSnackbar(
+        "Couldn't scan that image. Please try again or fill in the fields manually.",
+        { variant: "error" }
+      );
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  // Reads back the confidence for a field, but only while the current form
+  // value still matches what the scan produced - returns undefined (show no
+  // badge) once the user edits the field away from what OCR read. A
+  // defined-but-null return means "show a badge, confidence just wasn't
+  // available" (handled by getConfidenceTier's "unknown" tier).
+  const getActiveFieldConfidence = (fieldKey) => {
+    const info = fieldConfidence[fieldKey];
+    if (!info) return undefined;
+    const liveValue = watch(fieldKey);
+    if (String(liveValue ?? "") !== String(info.scannedValue ?? "")) return undefined;
+    return info.confidence;
+  };
+
+  const isLowConfidenceField = (fieldKey) => {
+    const confidence = getActiveFieldConfidence(fieldKey);
+    if (confidence === undefined) return false;
+    return getConfidenceTier(confidence).level === "low";
+  };
+
+  const renderConfidenceBadge = (fieldKey) => {
+    const confidence = getActiveFieldConfidence(fieldKey);
+    if (confidence === undefined) return null;
+
+    const tier = getConfidenceTier(confidence);
+    return (
+      <div className="flex items-center gap-2 -mt-1">
+        <Chip
+          size="small"
+          label={`OCR: ${tier.label}`}
+          color={tier.color}
+          variant={tier.level === "high" ? "outlined" : "filled"}
+        />
+        {tier.level === "low" && (
+          <span className="text-xs text-red-600">Please verify this field</span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <Card className="bg-white shadow-sm">
       {/* Header */}
@@ -183,6 +315,42 @@ export default function FinancialManagement() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Left side form */}
           <div className="flex flex-col gap-3">
+            {/* Scan Deposit Slip - OCR pre-fill, review before submit */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-700">Scan Deposit Slip</p>
+                <p className="text-xs text-slate-500">
+                  Photograph or upload the deposit slip to pre-fill the fields below. Everything stays editable - nothing is submitted automatically.
+                </p>
+              </div>
+
+              <Button
+                variant="outlined"
+                size="small"
+                disabled={isExtracting}
+                startIcon={isExtracting ? <CircularProgress size={16} /> : <ScanLine size={16} />}
+                onClick={() => depositSlipInputRef.current?.click()}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                {isExtracting ? "Extracting..." : "Scan Deposit Slip"}
+              </Button>
+
+              <input
+                ref={depositSlipInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                onChange={handleDepositSlipFileSelected}
+              />
+            </div>
+
+            {scannedFileName && (
+              <p className="-mt-1 text-xs text-slate-500">
+                Scanned document: <span className="font-medium text-slate-700">{scannedFileName}</span>
+              </p>
+            )}
+
             {/* Student Search */}
             <Box>
               <Typography variant="subtitle2" className="mb-1">
@@ -201,6 +369,7 @@ export default function FinancialManagement() {
                 }}
                 error={!!errors.query}
                 helperText={errors.query?.message}
+                sx={isLowConfidenceField("query") ? LOW_CONFIDENCE_SX : undefined}
               />
 
               <div className="mt-1 text-xs text-gray-500">
@@ -209,74 +378,91 @@ export default function FinancialManagement() {
                   <span className="text-red-500">No inmate found</span>
                 )}
               </div>
+              {renderConfidenceBadge("query")}
             </Box>
 
             {/* Deposit Type */}
-            <Controller
-              name="depositType"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label="Deposit Type"
-                  size="small"
-                  fullWidth
-                  select
-                  error={!!errors.depositType}
-                  helperText={errors.depositType?.message}
-                >
-                  <MenuItem value="Bank">Bank</MenuItem>
-                  <MenuItem value="Cash">Cash</MenuItem>
-                </TextField>
-              )}
-            />
+            <div>
+              <Controller
+                name="depositType"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Deposit Type"
+                    size="small"
+                    fullWidth
+                    select
+                    error={!!errors.depositType}
+                    helperText={errors.depositType?.message}
+                    sx={isLowConfidenceField("depositType") ? LOW_CONFIDENCE_SX : undefined}
+                  >
+                    <MenuItem value="Bank">Bank</MenuItem>
+                    <MenuItem value="Cash">Cash</MenuItem>
+                  </TextField>
+                )}
+              />
+              {renderConfidenceBadge("depositType")}
+            </div>
 
             {/* Relationship */}
-            <Controller
-              name="relationShipId"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label="Relationship"
-                  size="small"
-                  fullWidth
-                  select
-                  error={!!errors.relationShipId}
-                  helperText={errors.relationShipId?.message}
-                >
-                  <MenuItem value="">Select</MenuItem>
-                  <MenuItem value="mother">Mother</MenuItem>
-                  <MenuItem value="father">Father</MenuItem>
-                  <MenuItem value="sibling">Sibling</MenuItem>
-                  <MenuItem value="teacher">Advocate</MenuItem>
-                  <MenuItem value="friend">Friend</MenuItem>
-                  <MenuItem value="other">Other</MenuItem>
-                </TextField>
-              )}
-            />
+            <div>
+              <Controller
+                name="relationShipId"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Relationship"
+                    size="small"
+                    fullWidth
+                    select
+                    error={!!errors.relationShipId}
+                    helperText={errors.relationShipId?.message}
+                    sx={isLowConfidenceField("relationShipId") ? LOW_CONFIDENCE_SX : undefined}
+                  >
+                    <MenuItem value="">Select</MenuItem>
+                    <MenuItem value="mother">Mother</MenuItem>
+                    <MenuItem value="father">Father</MenuItem>
+                    <MenuItem value="sibling">Sibling</MenuItem>
+                    <MenuItem value="teacher">Advocate</MenuItem>
+                    <MenuItem value="friend">Friend</MenuItem>
+                    <MenuItem value="other">Other</MenuItem>
+                  </TextField>
+                )}
+              />
+              {renderConfidenceBadge("relationShipId")}
+            </div>
 
             {/* Deposit Amount */}
-            <TextField
-              label="Deposit Amount"
-              size="small"
-              fullWidth
-              type="number"
-              {...register("depositAmount")}
-              error={!!errors.depositAmount}
-              helperText={errors.depositAmount?.message}
-              onWheel={(e) => e.target.blur()}
-            />
+            <div>
+              <TextField
+                label="Deposit Amount"
+                size="small"
+                fullWidth
+                type="number"
+                {...register("depositAmount")}
+                error={!!errors.depositAmount}
+                helperText={errors.depositAmount?.message}
+                onWheel={(e) => e.target.blur()}
+                sx={isLowConfidenceField("depositAmount") ? LOW_CONFIDENCE_SX : undefined}
+              />
+              {renderConfidenceBadge("depositAmount")}
+            </div>
 
             {/* Remarks */}
-            <TextField
-              label="Remarks"
-              size="small"
-              fullWidth
-              {...register("remarks")}
-              error={!!errors.remarks}
-              helperText={errors.remarks?.message}
-            />
+            <div>
+              <TextField
+                label="Remarks"
+                size="small"
+                fullWidth
+                {...register("remarks")}
+                error={!!errors.remarks}
+                helperText={errors.remarks?.message}
+                sx={isLowConfidenceField("remarks") ? LOW_CONFIDENCE_SX : undefined}
+              />
+              {renderConfidenceBadge("remarks")}
+            </div>
 
             <Box>
               <Typography variant="subtitle2" className="mb-1">

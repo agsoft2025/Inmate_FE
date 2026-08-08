@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -9,6 +9,7 @@ import {
     IconButton,
     Autocomplete,
     CircularProgress,
+    Chip,
 } from "@mui/material";
 import { useSnackbar } from "notistack";
 
@@ -16,7 +17,28 @@ import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as Yup from "yup";
 import { useCanteenItemOptionsQuery, useDeleteInventoryItemMutation, useUpsertInventoryMutation } from "../../hooks/useInventoryQuery";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ScanLine } from "lucide-react";
+import { runOcr, parseInvoiceFields, getConfidenceTier } from "../../utils/documentScanUtils";
+
+// Fields that highlight red in the LOW_CONFIDENCE_SX style below (border +
+// tinted background) when their scanned confidence is under the "low" tier
+// and the user hasn't edited the value since the scan.
+const LOW_CONFIDENCE_SX = {
+    "& .MuiOutlinedInput-root": {
+        backgroundColor: "#fef2f2",
+        "& fieldset": { borderColor: "#ef4444" },
+    },
+};
+
+// Labels shown in the "filled N fields from the invoice" confirmation -
+// keys match parseInvoiceFields()'s return shape.
+const INVOICE_FIELD_LABELS = {
+    date: "Date",
+    invoiceNo: "Invoice No",
+    vendorName: "Vendor Name",
+    vendorValue: "Vendor Value",
+    gatePassNumber: "GP Number",
+};
 
 // ✅ TanStack hooks
 
@@ -29,6 +51,20 @@ function StoreInventoryDialog({
     initialItems, // optional: pre-fill storeItems for a fresh "create" (e.g. reorder suggestion)
 }) {
     const { enqueueSnackbar } = useSnackbar();
+
+    // Scan Invoice: OCR + field extraction. Never touches storeItems, only
+    // the invoice-level fields above them - line items still have to be
+    // added/reviewed by hand.
+    const [isExtracting, setIsExtracting] = useState(false);
+    const invoiceFileInputRef = useRef(null);
+    const [scannedFileName, setScannedFileName] = useState(null);
+    // Per-field OCR confidence + the value that was in the field right after
+    // the scan, keyed by form field name - e.g.
+    // { invoiceNo: { confidence: 42, scannedValue: "INV-2026-0456" } }.
+    // Kept separate per field (merged across scans) so a badge only ever
+    // describes the field it's attached to, and clears itself once the user
+    // edits that field's value away from what the scan produced.
+    const [fieldConfidence, setFieldConfidence] = useState({});
 
     // ✅ OPTIONS via TanStack (fetch only when open)
     const {
@@ -131,6 +167,8 @@ function StoreInventoryDialog({
         register,
         handleSubmit,
         reset,
+        setValue,
+        watch,
         formState: { errors, isSubmitting },
     } = useForm({
         defaultValues,
@@ -165,6 +203,99 @@ function StoreInventoryDialog({
         err?.response?.data?.data?.message ||
         err?.message ||
         "Something went wrong";
+
+    // Runs OCR on the selected photo/scan and pre-fills whatever invoice
+    // fields it can confidently read, along with a per-field confidence
+    // score (from Tesseract.js's own word-level confidence where available).
+    // Only ever calls setValue() - never submits the form. The user
+    // reviews/edits everything and clicks the existing Create/Update button
+    // themselves.
+    const handleInvoiceFileSelected = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // allow re-selecting the same file again later
+        if (!file) return;
+
+        setScannedFileName(file.name);
+        setIsExtracting(true);
+        try {
+            const { text, confidence: pageConfidence, words } = await runOcr(file);
+            const extracted = parseInvoiceFields(text, words, pageConfidence);
+            const foundFields = Object.keys(extracted);
+
+            foundFields.forEach((key) => {
+                setValue(key, extracted[key].value, { shouldValidate: true, shouldDirty: true });
+            });
+
+            setFieldConfidence((prev) => {
+                const next = { ...prev };
+                foundFields.forEach((key) => {
+                    next[key] = { confidence: extracted[key].confidence, scannedValue: extracted[key].value };
+                });
+                return next;
+            });
+
+            if (foundFields.length > 0) {
+                enqueueSnackbar(
+                    `Filled ${foundFields.length} field${foundFields.length === 1 ? "" : "s"} from the invoice (${foundFields
+                        .map((key) => INVOICE_FIELD_LABELS[key])
+                        .join(", ")}). Please review before submitting - low-confidence fields are highlighted.`,
+                    { variant: "info" }
+                );
+            } else {
+                enqueueSnackbar(
+                    "Couldn't confidently read any fields from that image - please fill them in manually.",
+                    { variant: "warning" }
+                );
+            }
+        } catch (err) {
+            enqueueSnackbar(
+                "Couldn't scan that image. Please try again or fill in the fields manually.",
+                { variant: "error" }
+            );
+        } finally {
+            setIsExtracting(false);
+        }
+    };
+
+    // Reads back the confidence for a field, but only while the current
+    // form value still matches what the scan produced - returns undefined
+    // (meaning: show no badge at all) once the user edits the field away
+    // from what OCR read, since the confidence no longer describes what's
+    // on screen. A defined-but-null return means "show a badge, confidence
+    // just wasn't available" (handled by getConfidenceTier's "unknown" tier).
+    const getActiveFieldConfidence = (fieldKey) => {
+        const info = fieldConfidence[fieldKey];
+        if (!info) return undefined;
+        const liveValue = watch(fieldKey);
+        if (String(liveValue ?? "") !== String(info.scannedValue ?? "")) return undefined;
+        return info.confidence;
+    };
+
+    const isLowConfidenceField = (fieldKey) => {
+        const confidence = getActiveFieldConfidence(fieldKey);
+        if (confidence === undefined) return false;
+        return getConfidenceTier(confidence).level === "low";
+    };
+
+    const renderConfidenceBadge = (fieldKey) => {
+        const confidence = getActiveFieldConfidence(fieldKey);
+        if (confidence === undefined) return null;
+
+        const tier = getConfidenceTier(confidence);
+        return (
+            <div className="flex items-center gap-2 -mt-2 mb-1">
+                <Chip
+                    size="small"
+                    label={`OCR: ${tier.label}`}
+                    color={tier.color}
+                    variant={tier.level === "high" ? "outlined" : "filled"}
+                />
+                {tier.level === "low" && (
+                    <span className="text-xs text-red-600">Please verify this field</span>
+                )}
+            </div>
+        );
+    };
 
     const onSubmit = async (values) => {
         try {
@@ -206,48 +337,104 @@ function StoreInventoryDialog({
             <form onSubmit={handleSubmit(onSubmit)}>
                 <DialogContent dividers>
                     <div className="flex flex-col gap-4">
+                        {/* Scan Invoice - OCR pre-fill, review before submit */}
+                        <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-700">Scan Invoice</p>
+                                <p className="text-xs text-slate-500">
+                                    Photograph or upload the vendor invoice to pre-fill the fields below. Everything stays editable - nothing is submitted automatically.
+                                </p>
+                            </div>
+
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                disabled={isExtracting}
+                                startIcon={isExtracting ? <CircularProgress size={16} /> : <ScanLine size={16} />}
+                                onClick={() => invoiceFileInputRef.current?.click()}
+                                sx={{ whiteSpace: "nowrap" }}
+                            >
+                                {isExtracting ? "Extracting..." : "Scan Invoice"}
+                            </Button>
+
+                            <input
+                                ref={invoiceFileInputRef}
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                hidden
+                                onChange={handleInvoiceFileSelected}
+                            />
+                        </div>
+
+                        {scannedFileName && (
+                            <p className="-mt-2 text-xs text-slate-500">
+                                Scanned document: <span className="font-medium text-slate-700">{scannedFileName}</span>
+                            </p>
+                        )}
+
                         {/* Date */}
-                        <TextField
-                            type="date"
-                            label="Date"
-                            InputLabelProps={{ shrink: true }}
-                            fullWidth
-                            {...register("date")}
-                            error={!!errors.date}
-                            helperText={errors.date?.message}
-                        />
+                        <div>
+                            <TextField
+                                type="date"
+                                label="Date"
+                                InputLabelProps={{ shrink: true }}
+                                fullWidth
+                                {...register("date")}
+                                error={!!errors.date}
+                                helperText={errors.date?.message}
+                                sx={isLowConfidenceField("date") ? LOW_CONFIDENCE_SX : undefined}
+                            />
+                            {renderConfidenceBadge("date")}
+                        </div>
 
-                        <TextField
-                            label="Invoice No"
-                            fullWidth
-                            {...register("invoiceNo")}
-                            error={!!errors.invoiceNo}
-                            helperText={errors.invoiceNo?.message}
-                        />
+                        <div>
+                            <TextField
+                                label="Invoice No"
+                                fullWidth
+                                {...register("invoiceNo")}
+                                error={!!errors.invoiceNo}
+                                helperText={errors.invoiceNo?.message}
+                                sx={isLowConfidenceField("invoiceNo") ? LOW_CONFIDENCE_SX : undefined}
+                            />
+                            {renderConfidenceBadge("invoiceNo")}
+                        </div>
 
-                        <TextField
-                            label="Vendor Name"
-                            fullWidth
-                            {...register("vendorName")}
-                            error={!!errors.vendorName}
-                            helperText={errors.vendorName?.message}
-                        />
+                        <div>
+                            <TextField
+                                label="Vendor Name"
+                                fullWidth
+                                {...register("vendorName")}
+                                error={!!errors.vendorName}
+                                helperText={errors.vendorName?.message}
+                                sx={isLowConfidenceField("vendorName") ? LOW_CONFIDENCE_SX : undefined}
+                            />
+                            {renderConfidenceBadge("vendorName")}
+                        </div>
 
-                        <TextField
-                            label="Vendor Value"
-                            fullWidth
-                            {...register("vendorValue")}
-                            error={!!errors.vendorValue}
-                            helperText={errors.vendorValue?.message}
-                        />
+                        <div>
+                            <TextField
+                                label="Vendor Value"
+                                fullWidth
+                                {...register("vendorValue")}
+                                error={!!errors.vendorValue}
+                                helperText={errors.vendorValue?.message}
+                                sx={isLowConfidenceField("vendorValue") ? LOW_CONFIDENCE_SX : undefined}
+                            />
+                            {renderConfidenceBadge("vendorValue")}
+                        </div>
 
-                        <TextField
-                            label="GP Number"
-                            fullWidth
-                            {...register("gatePassNumber")}
-                            error={!!errors.gatePassNumber}
-                            helperText={errors.gatePassNumber?.message}
-                        />
+                        <div>
+                            <TextField
+                                label="GP Number"
+                                fullWidth
+                                {...register("gatePassNumber")}
+                                error={!!errors.gatePassNumber}
+                                helperText={errors.gatePassNumber?.message}
+                                sx={isLowConfidenceField("gatePassNumber") ? LOW_CONFIDENCE_SX : undefined}
+                            />
+                            {renderConfidenceBadge("gatePassNumber")}
+                        </div>
 
                         {/* Store Items */}
                         <div className="flex flex-col gap-4">
