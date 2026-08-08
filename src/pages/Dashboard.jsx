@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Users,
   Wallet,
@@ -6,6 +7,8 @@ import {
   IndianRupee,
   AlertTriangle,
   MessageCircle,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import { useDashboardQuery } from "../hooks/useDashboardQuery";
@@ -44,7 +47,92 @@ function buildOutreachDraft(inmate, daysToZero) {
   return `Dear ${name} (ID: ${inmate.inmateId || "N/A"}), your canteen wallet balance is currently ₹${balance} and ${urgency}. Please arrange a top-up soon to avoid any interruption to canteen purchases. - Facility Administration`;
 }
 
-function StatCard({ title, value, icon: Icon, color }) {
+// Executive Dashboard Narrative: a short, plain-English summary of the
+// numbers already loaded on this page. Purely template text built from the
+// existing dashboard API response - no extra API/AI calls.
+function buildDashboardNarrative(dash) {
+  if (!dash) return "";
+
+  const totalInmates = dash.totalInmates ?? 0;
+  const totalBalance = dash.totalBalance ?? 0;
+  const todayTransactionCount = dash.todayTransactionCount ?? 0;
+  const totalSalesToday = dash.totalSalesToday ?? 0;
+  const lowBalanceCount = dash.lowBalanceInmates?.length ?? 0;
+  const reversedCount = (dash.recentTransactions || []).filter(
+    (tx) => tx?.details?.is_reversed
+  ).length;
+
+  const sentences = [
+    `${totalInmates} inmate${totalInmates === 1 ? "" : "s"} on record with a combined wallet balance of ₹${totalBalance}.`,
+    `${todayTransactionCount} transaction${todayTransactionCount === 1 ? "" : "s"} today totaling ₹${totalSalesToday} in canteen sales.`,
+  ];
+
+  sentences.push(
+    lowBalanceCount > 0
+      ? `${lowBalanceCount} inmate${lowBalanceCount === 1 ? " is" : "s are"} running low on funds.`
+      : "No inmates are currently running low on funds."
+  );
+
+  if (reversedCount > 0) {
+    sentences.push(
+      `${reversedCount} of the most recent transaction${reversedCount === 1 ? "" : "s"} ${
+        reversedCount === 1 ? "was" : "were"
+      } reversed and may be worth a look.`
+    );
+  }
+
+  return sentences.join(" ");
+}
+
+// "Worth a look" links reuse the is_reversed flag already shown in the
+// Recent Transactions table below (same data, no new backend field).
+function getFlaggedTransactions(dash) {
+  return (dash?.recentTransactions || [])
+    .filter((tx) => tx?.details?.is_reversed)
+    .slice(0, 3);
+}
+
+function describeFlaggedTransaction(tx) {
+  const amount = Math.abs(tx.totalAmount ?? 0);
+  const inmateId = tx.details?.inmateId;
+  const who = inmateId ? `Inmate ${inmateId}` : tx.type || "Transaction";
+  const date = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : "";
+  return `${who} — ₹${amount} reversed${date ? ` on ${date}` : ""}`;
+}
+
+// Deep-link straight to this transaction in Transaction History. `range`
+// and `pageSize` are widened so the (typically very recent) reversed
+// transaction is reliably on the first page of results; TransactionHistory
+// reads these as optional params and falls back to its normal defaults
+// when they're absent.
+function buildTransactionDeepLink(tx) {
+  const params = new URLSearchParams({
+    highlight: tx._id,
+    range: "yearly",
+    pageSize: "50",
+  });
+  return `/transaction-history?${params.toString()}`;
+}
+
+// Turns a { percent, direction } week-over-week object (from the dashboard
+// API's weekOverWeek field) into the small label shown under a stat card.
+// Returns null when there's no trend data, so StatCard can skip rendering
+// the badge entirely rather than showing something misleading.
+function formatTrendLabel(trend) {
+  if (!trend) return null;
+
+  const arrow = trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "—";
+  // percent is null when the previous week's value was zero and the metric
+  // is now non-zero - a % change from zero isn't meaningful, so say "New"
+  // instead of a fake number, while still showing the correct direction.
+  const percentLabel = trend.percent === null ? "New" : `${trend.percent}%`;
+
+  return `${arrow} ${percentLabel} vs last week`;
+}
+
+function StatCard({ title, value, icon: Icon, color, trend }) {
+  const trendLabel = formatTrendLabel(trend);
+
   return (
     <div
       className={`relative overflow-hidden rounded-2xl p-3 md:p-5 shadow-md bg-linear-to-br ${color}`}
@@ -55,13 +143,21 @@ function StatCard({ title, value, icon: Icon, color }) {
 
       <p className="text-sm text-white/80">{title}</p>
       <h2 className="text-3xl font-bold text-white mt-2">{value ?? 0}</h2>
+      {trendLabel && (
+        <p className="text-xs text-white/90 font-medium mt-1.5">{trendLabel}</p>
+      )}
     </div>
   );
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { data, isLoading } = useDashboardQuery();
   const dash = data?.data;
+
+  // Executive Dashboard Narrative: derived purely from already-loaded data.
+  const dashboardNarrative = buildDashboardNarrative(dash);
+  const flaggedTransactions = getFlaggedTransactions(dash);
 
   // Predictive Low-Balance Outreach: modal state + draft-review-send flow.
   const [outreachInmate, setOutreachInmate] = useState(null);
@@ -119,6 +215,45 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* 🧭 Executive Summary */}
+      <div className="bg-white rounded-2xl shadow-sm border p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5 rounded-full bg-indigo-100 p-2">
+            <Sparkles className="w-5 h-5 text-indigo-600" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base sm:text-lg font-bold text-slate-800">
+              Today at a Glance
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">
+              {dashboardNarrative || "Dashboard data is not available right now."}
+            </p>
+
+            {flaggedTransactions.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Worth a look
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {flaggedTransactions.map((tx) => (
+                    <button
+                      key={tx._id}
+                      type="button"
+                      onClick={() => navigate(buildTransactionDeepLink(tx))}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 border border-red-200 hover:border-red-300 bg-red-50 hover:bg-red-100 rounded-lg px-2.5 py-1.5 transition"
+                    >
+                      {describeFlaggedTransaction(tx)}
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* 🔢 Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-6">
         <StatCard
@@ -126,6 +261,7 @@ export default function Dashboard() {
           value={dash?.totalInmates}
           icon={Users}
           color="from-blue-500 to-blue-600"
+          trend={dash?.weekOverWeek?.totalInmates}
         />
 
         <StatCard
@@ -133,6 +269,7 @@ export default function Dashboard() {
           value={`₹ ${dash?.totalBalance || 0}`}
           icon={Wallet}
           color="from-emerald-500 to-emerald-600"
+          trend={dash?.weekOverWeek?.totalBalance}
         />
 
         <StatCard
@@ -140,6 +277,7 @@ export default function Dashboard() {
           value={dash?.todayTransactionCount}
           icon={ArrowLeftRight}
           color="from-violet-500 to-violet-600"
+          trend={dash?.weekOverWeek?.todayTransactionCount}
         />
 
         <StatCard
@@ -147,6 +285,7 @@ export default function Dashboard() {
           value={`₹ ${dash?.totalSalesToday || 0}`}
           icon={IndianRupee}
           color="from-orange-500 to-orange-600"
+          trend={dash?.weekOverWeek?.totalSalesToday}
         />
       </div>
 

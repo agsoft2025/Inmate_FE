@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
     Box,
     Button,
@@ -11,11 +12,13 @@ import {
     MenuItem,
     Select,
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid, useGridApiRef } from "@mui/x-data-grid";
 import { useTransactionsQuery } from "../hooks/useTransactionsQuery";
 import { formatDate } from "../hooks/useFormatDate";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000/").replace(/\/+$/, "");
+
+const VALID_RANGES = ["daily", "weekly", "monthly", "yearly"];
 
 const getAttachmentUrl = (fileUrl) => {
     if (!fileUrl) return "";
@@ -29,14 +32,29 @@ const getAttachmentUrl = (fileUrl) => {
 };
 
 export default function TransactionHistory() {
-    const [range, setRange] = useState("daily");
+    // Optional deep-link support, e.g. from the Dashboard's "Worth a look"
+    // links: /transaction-history?highlight=<id>&range=yearly&pageSize=50
+    // All params are optional - when absent, behavior is unchanged.
+    const [searchParams] = useSearchParams();
+    const highlightId = searchParams.get("highlight") || null;
+    const linkedRange = searchParams.get("range");
+    const linkedPageSize = parseInt(searchParams.get("pageSize"), 10);
+
+    const [range, setRange] = useState(
+        VALID_RANGES.includes(linkedRange) ? linkedRange : "daily"
+    );
     const [page, setPage] = useState(0);
-    const [pageSize, setPageSize] = useState(10);
+    const [pageSize, setPageSize] = useState(
+        Number.isFinite(linkedPageSize) && linkedPageSize > 0 ? linkedPageSize : 10
+    );
     const [attachmentModal, setAttachmentModal] = useState({
         open: false,
         files: [],
         selectedIndex: 0,
     });
+
+    const apiRef = useGridApiRef();
+    const hasScrolledToHighlight = useRef(false);
 
     const apiPage = page + 1;
 
@@ -99,6 +117,30 @@ export default function TransactionHistory() {
             };
         });
     }, [transactions]);
+
+    // Best-effort scroll to a deep-linked transaction once it's loaded.
+    useEffect(() => {
+        if (!highlightId || hasScrolledToHighlight.current || isLoading || !rows.length) return;
+
+        const rowIndex = rows.findIndex((row) => row.id === highlightId);
+        if (rowIndex === -1) return;
+
+        hasScrolledToHighlight.current = true;
+        requestAnimationFrame(() => {
+            try {
+                apiRef.current?.scrollToIndexes?.({ rowIndex, colIndex: 0 });
+            } catch {
+                // Non-fatal - the row is still visually highlighted below.
+            }
+        });
+    }, [highlightId, rows, isLoading, apiRef]);
+
+    const highlightNotFound =
+        Boolean(highlightId) &&
+        !isLoading &&
+        !isFetching &&
+        rows.length > 0 &&
+        !rows.some((row) => row.id === highlightId);
 
     const columns = useMemo(
         () => [
@@ -303,6 +345,17 @@ export default function TransactionHistory() {
                                 <p className="text-xs text-slate-500">
                                     {isFetching && !isLoading ? "Updating..." : ""}
                                 </p>
+                                {highlightId && !highlightNotFound && (
+                                    <p className="text-xs text-blue-600 mt-1">
+                                        Showing a linked transaction, highlighted below.
+                                    </p>
+                                )}
+                                {highlightNotFound && (
+                                    <p className="text-xs text-amber-600 mt-1">
+                                        The linked transaction wasn't found on this page - try
+                                        widening the range or page size above.
+                                    </p>
+                                )}
                             </div>
 
                             <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -326,6 +379,7 @@ export default function TransactionHistory() {
                         <div className="rounded-xl bg-white p-3 shadow">
                             <Box sx={{ height: "calc(100vh - 260px)", width: "100%" }}>
                                 <DataGrid
+                                    apiRef={apiRef}
                                     rows={rows}
                                     columns={columns}
                                     loading={isLoading || isFetching}
@@ -346,6 +400,11 @@ export default function TransactionHistory() {
                                     disableRowSelectionOnClick
                                     getRowId={(row) => row.id}
                                     getRowHeight={() => "auto"}
+                                    getRowClassName={(params) =>
+                                        highlightId && params.row.id === highlightId
+                                            ? "highlighted-transaction-row"
+                                            : ""
+                                    }
                                     sx={{
                                         "& .MuiDataGrid-cell": {
                                             display: "flex",
@@ -355,6 +414,12 @@ export default function TransactionHistory() {
                                             py: 1,
                                         },
                                         "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f8fafc" },
+                                        "& .highlighted-transaction-row": {
+                                            backgroundColor: "#fef3c7",
+                                        },
+                                        "& .highlighted-transaction-row:hover": {
+                                            backgroundColor: "#fde68a",
+                                        },
                                     }}
                                 />
                             </Box>

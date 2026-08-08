@@ -26,6 +26,7 @@ function StoreInventoryDialog({
     selectedData,
     setSelectedData,
     setRefetch, // optional legacy refetchKey
+    initialItems, // optional: pre-fill storeItems for a fresh "create" (e.g. reorder suggestion)
 }) {
     const { enqueueSnackbar } = useSnackbar();
 
@@ -40,6 +41,24 @@ function StoreInventoryDialog({
 
     const upsertMutation = useUpsertInventoryMutation();
     const deleteItemMutation = useDeleteInventoryItemMutation();
+
+    // A "reorder suggestion" (or any other caller) can seed a fresh Create
+    // form with one or more line items without turning this into an edit -
+    // it only applies when there's no selectedData (i.e. still create mode).
+    const prefillStoreItems = useMemo(() => {
+        if (selectedData || !Array.isArray(initialItems) || initialItems.length === 0) {
+            return null;
+        }
+        return initialItems.map((item) => ({
+            itemName: item.itemName || "",
+            itemNo: item.itemNo || "",
+            stock: item.stock ?? "",
+            sellingPrice: item.sellingPrice ?? "",
+            category: item.category || "",
+            status: item.status || "Active",
+            itemID: item.itemID || "",
+        }));
+    }, [selectedData, initialItems]);
 
     const defaultValues = useMemo(() => {
         return {
@@ -60,7 +79,8 @@ function StoreInventoryDialog({
                     category: item.category || "",
                     status: item.status || "Active",
                     itemID: item._id || "",
-                })) || [
+                })) ||
+                prefillStoreItems || [
                     {
                         itemName: "",
                         itemNo: "",
@@ -72,7 +92,7 @@ function StoreInventoryDialog({
                     },
                 ],
         };
-    }, [selectedData]);
+    }, [selectedData, prefillStoreItems]);
 
     const schema = useMemo(() => {
         return Yup.object({
