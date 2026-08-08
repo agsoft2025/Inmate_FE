@@ -1,10 +1,11 @@
 import api from "../lib/axios";
 
-export const getUsers = async ({ page = 1, limit = 10 }) => {
+export const getUsers = async ({ page = 1, limit = 10, search = "" } = {}) => {
   const res = await api.get("users", {
     params: {
       page,
       limit,
+      ...(search ? { search } : {}),
     },
   });
 

@@ -3,6 +3,7 @@ import { useSnackbar } from "notistack";
 import { DataGrid } from "@mui/x-data-grid";
 import { Box, Chip, Stack, Tooltip, Typography } from "@mui/material";
 import { useAuditLogsQuery } from "../hooks/useAuditLogsQuery";
+import SmartSearch from "../components/common/SmartSearch";
 
 const ACTION_META = {
     CREATE: { label: "Created", color: "success" },
@@ -95,13 +96,22 @@ export default function AuditTrails() {
 
     const [page, setPage] = useState(0);
     const [pageSize, setPageSize] = useState(10);
+    const [search, setSearch] = useState("");
 
     const apiPage = page + 1;
 
     const { data, isLoading, isError, error, isFetching } = useAuditLogsQuery({
         page: apiPage,
         limit: pageSize,
+        search,
     });
+
+    // Unified Smart Search - resets back to page 1 whenever the search
+    // term changes, same as a page-size change already does below.
+    const handleSearch = (value) => {
+        setSearch(value);
+        setPage(0);
+    };
 
     const rows = useMemo(() => {
         const list = data?.data ?? [];
@@ -211,6 +221,15 @@ export default function AuditTrails() {
                 </div>
 
                 <div className="bg-white rounded-xl shadow p-4">
+                    <div className="mb-3 max-w-md">
+                        <SmartSearch
+                            placeholder="Search by user, action, module, or description"
+                            onSearch={handleSearch}
+                            loading={isFetching && !isLoading}
+                            fullWidth
+                        />
+                    </div>
+
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                             <Chip size="small" label={`Total logs: ${total}`} variant="outlined" />

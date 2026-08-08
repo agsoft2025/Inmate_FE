@@ -15,6 +15,7 @@ import {
 import { DataGrid, useGridApiRef } from "@mui/x-data-grid";
 import { useTransactionsQuery } from "../hooks/useTransactionsQuery";
 import { formatDate } from "../hooks/useFormatDate";
+import SmartSearch from "../components/common/SmartSearch";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000/").replace(/\/+$/, "");
 
@@ -47,6 +48,7 @@ export default function TransactionHistory() {
     const [pageSize, setPageSize] = useState(
         Number.isFinite(linkedPageSize) && linkedPageSize > 0 ? linkedPageSize : 10
     );
+    const [search, setSearch] = useState("");
     const [attachmentModal, setAttachmentModal] = useState({
         open: false,
         files: [],
@@ -62,10 +64,19 @@ export default function TransactionHistory() {
         range,
         page: apiPage,
         limit: pageSize,
+        search,
     });
 
     const transactions = data?.transactions ?? [];
     const total = data?.totalRecords ?? 0;
+
+    // Unified Smart Search - searches within whatever date range is
+    // currently selected (the two filters combine, they don't replace each
+    // other) and resets back to page 1, same as changing the range does.
+    const handleSearch = (value) => {
+        setSearch(value);
+        setPage(0);
+    };
 
     const openAttachmentModal = (files) => {
         const validFiles = Array.isArray(files) ? files.filter((file) => file?.fileUrl) : [];
@@ -358,22 +369,33 @@ export default function TransactionHistory() {
                                 )}
                             </div>
 
-                            <FormControl size="small" sx={{ minWidth: 160 }}>
-                                <InputLabel>Range</InputLabel>
-                                <Select
-                                    label="Range"
-                                    value={range}
-                                    onChange={(e) => {
-                                        setRange(e.target.value);
-                                        setPage(0);
-                                    }}
-                                >
-                                    <MenuItem value="daily">Daily</MenuItem>
-                                    <MenuItem value="weekly">Weekly</MenuItem>
-                                    <MenuItem value="monthly">Monthly</MenuItem>
-                                    <MenuItem value="yearly">Yearly</MenuItem>
-                                </Select>
-                            </FormControl>
+                            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center md:w-auto">
+                                <div className="w-full sm:w-72">
+                                    <SmartSearch
+                                        placeholder="Search by inmate ID, product, deposit type, or status"
+                                        onSearch={handleSearch}
+                                        loading={isFetching && !isLoading}
+                                        fullWidth
+                                    />
+                                </div>
+
+                                <FormControl size="small" sx={{ minWidth: 160 }}>
+                                    <InputLabel>Range</InputLabel>
+                                    <Select
+                                        label="Range"
+                                        value={range}
+                                        onChange={(e) => {
+                                            setRange(e.target.value);
+                                            setPage(0);
+                                        }}
+                                    >
+                                        <MenuItem value="daily">Daily</MenuItem>
+                                        <MenuItem value="weekly">Weekly</MenuItem>
+                                        <MenuItem value="monthly">Monthly</MenuItem>
+                                        <MenuItem value="yearly">Yearly</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </div>
                         </div>
 
                         <div className="rounded-xl bg-white p-3 shadow">

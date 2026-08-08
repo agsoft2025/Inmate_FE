@@ -10,6 +10,7 @@ import {
   Typography,
   Box,
   TextField,
+  Autocomplete,
   Button,
   MenuItem,
   Divider,
@@ -64,7 +65,18 @@ const schema = yup.object({
 export default function FinancialManagement() {
   const { enqueueSnackbar } = useSnackbar();
 
-  const [searchValue, setSearchValue] = useState(""); // STU001 typed
+  // Unified inmate lookup - mirrors the Autocomplete pattern used in
+  // Reports.jsx's "Search Inmate ID" field:
+  //  - `inputText` is what's actually shown in the box.
+  //  - `studentSearch` is the text that drives the debounced backend
+  //    search (only updated while the user is actively typing, not when
+  //    selecting a suggestion or blurring - same as Reports.jsx).
+  //  - `student` is the selected inmate record, set ONLY via onChange
+  //    (an explicit pick from the suggestions, never auto-picked from the
+  //    first search result the way the old exact-ID lookup worked).
+  const [inputText, setInputText] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [student, setStudent] = useState(null);
 
   const {
     register,
@@ -86,13 +98,14 @@ export default function FinancialManagement() {
     },
   });
 
-  // watch the exactData field (student search)
-  const exactData = watch("query");
-
-  const debouncedStudentId = useDebounce(exactData, 600);
-  // student search query
-  const studentQuery = useStudentExactQuery(debouncedStudentId);
-  const student = studentQuery.data?.data?.[0] || null;
+  // Same debounce + search hook Reports.jsx uses for its inmate
+  // Autocomplete - searchStudentExact() hits GET inmate/search, which
+  // matches inmateId/firstName/lastName/cellNumber and returns an array of
+  // candidates (despite the "Exact" name, it's a fuzzy/partial search).
+  // Reused as-is: no new API, no new hook.
+  const debouncedSearch = useDebounce(studentSearch, 400);
+  const studentQuery = useStudentExactQuery(debouncedSearch);
+  const students = studentQuery.data?.data ?? studentQuery.data ?? [];
 
   const mutation = useCreateDepositMutation();
   const [loading, setLoading] = useState(false);
@@ -145,7 +158,9 @@ export default function FinancialManagement() {
             depositAmount: "",
             remarks: "",
           }); // clears form
-          setSearchValue("");
+          setInputText("");
+          setStudentSearch("");
+          setStudent(null);
         } else {
           enqueueSnackbar(res?.message || "Deposit failed", { variant: "error" });
         }
@@ -185,9 +200,15 @@ export default function FinancialManagement() {
   // fields it can confidently read, along with a per-field confidence score
   // (from Tesseract.js's own word-level confidence where available). Only
   // ever calls setValue() (and mirrors the Inmate ID into the search box
-  // the same way manual typing does) - never submits the form. The user
-  // reviews/edits everything and clicks the existing "Process Deposit"
-  // button themselves.
+  // the same way manual typing does) - never submits the form, and never
+  // auto-selects an inmate on the user's behalf: a scanned ID just
+  // pre-fills the search box and lets its match(es) show up in the
+  // Autocomplete's suggestions, same as if the user had typed it - the
+  // user still reviews and picks the correct inmate themselves before
+  // submitting. This matters more than it might seem: OCR reads are
+  // exactly the kind of noisy data (a misread character, a similar ID)
+  // where silently trusting a "best guess" match on a financial deposit
+  // would be risky.
   async function handleDepositSlipFileSelected(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file again later
@@ -202,7 +223,8 @@ export default function FinancialManagement() {
 
       foundFields.forEach((key) => {
         if (key === "query") {
-          setSearchValue(extracted.query.value);
+          setInputText(extracted.query.value);
+          setStudentSearch(extracted.query.value);
         }
         setValue(key, extracted[key].value, { shouldValidate: true, shouldDirty: true });
       });
@@ -351,32 +373,69 @@ export default function FinancialManagement() {
               </p>
             )}
 
-            {/* Student Search */}
+            {/* Inmate lookup - searchable Autocomplete (same pattern as
+                Reports.jsx's "Search Inmate ID" field) instead of an
+                exact-ID-only text box. Type an ID or name, pick the right
+                inmate from the suggestions. */}
             <Box>
               <Typography variant="subtitle2" className="mb-1">
-                Inmate ID
+                Inmate
               </Typography>
 
-              <TextField
+              <Autocomplete
                 fullWidth
-                size="small"
-                placeholder="Enter exact inmate id (ex: INM001)"
-                value={searchValue}
-                onChange={(e) => {
-                  const val = e.target.value.toUpperCase();
-                  setSearchValue(val);
-                  setValue("query", val, { shouldValidate: true });
+                options={students}
+                value={student}
+                loading={studentQuery.isFetching}
+                filterOptions={(x) => x} // ✅ results already come pre-filtered from the backend search
+                onChange={(_, value) => {
+                  setStudent(value);
+                  setValue("query", value?.inmateId || "", {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  });
                 }}
-                error={!!errors.query}
-                helperText={errors.query?.message}
-                sx={isLowConfidenceField("query") ? LOW_CONFIDENCE_SX : undefined}
+                inputValue={inputText}
+                onInputChange={(_, value, reason) => {
+                  setInputText(value);
+                  // Only feed the search debounce while the user is
+                  // actually typing - not on selection/blur "reset", and
+                  // not on "clear" (handled separately below), same as
+                  // Reports.jsx's onInputChange guard.
+                  if (reason === "input") setStudentSearch(value);
+                  if (reason === "clear") setStudentSearch("");
+                }}
+                getOptionLabel={(o) => (o ? `${o.inmateId} - ${o.firstName} ${o.lastName}` : "")}
+                isOptionEqualToValue={(o, v) => o?._id === v?._id}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    placeholder="Search by inmate ID or name..."
+                    error={!!errors.query}
+                    helperText={errors.query?.message}
+                    sx={isLowConfidenceField("query") ? LOW_CONFIDENCE_SX : undefined}
+                    InputProps={{
+                      ...params.InputProps,
+                      endAdornment: (
+                        <>
+                          {studentQuery.isFetching ? <CircularProgress size={18} /> : null}
+                          {params.InputProps.endAdornment}
+                        </>
+                      ),
+                    }}
+                  />
+                )}
               />
 
               <div className="mt-1 text-xs text-gray-500">
                 {studentQuery.isFetching ? "Searching..." : ""}
-                {!studentQuery.isFetching && exactData?.length >= 3 && !student && (
-                  <span className="text-red-500">No inmate found</span>
-                )}
+                {!studentQuery.isFetching &&
+                  !student &&
+                  studentSearch.length >= 3 &&
+                  students.length === 0 && (
+                    <span className="text-red-500">No inmate found</span>
+                  )}
               </div>
               {renderConfidenceBadge("query")}
             </Box>

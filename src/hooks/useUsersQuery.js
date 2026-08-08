@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createUser, deleteFaceRecognition, deleteUser, getUserById, getUsers, updateUser } from "../service/userService";
 
-export const useUsersQuery = ({ page, limit }) =>
+export const useUsersQuery = ({ page, limit, search = "" }) =>
   useQuery({
-    queryKey: ["users", page, limit],
-    queryFn: () => getUsers({ page, limit }),
+    queryKey: ["users", page, limit, search],
+    queryFn: () => getUsers({ page, limit, search }),
     placeholderData: (prev) => prev, // keeps table stable
     staleTime: 1000 * 10,
     refetchOnWindowFocus: false,

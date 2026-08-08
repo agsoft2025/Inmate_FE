@@ -7,12 +7,14 @@ import { useDeleteUserMutation, useUsersQuery } from "../hooks/useUsersQuery";
 import ConfirmDeleteDialog from "../components/commonModals/ConfirmDeleteDialog";
 import UserFormDialog from "../components/user/UserFormDialog";
 import FaceRecognition from "../components/faceIdComponent/FaceID";
+import SmartSearch from "../components/common/SmartSearch";
 
 const UserManagement = () => {
     const { enqueueSnackbar } = useSnackbar();
 
     const [page, setPage] = useState(0);
     const [pageSize, setPageSize] = useState(10);
+    const [search, setSearch] = useState("");
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [open, setOpen] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
@@ -24,9 +26,18 @@ const UserManagement = () => {
     const { data, isLoading, isFetching } = useUsersQuery({
         page: page + 1,
         limit: pageSize,
+        search,
     });
 
     const rows = data?.data ?? [];
+
+    // Unified Smart Search - resets back to page 1 whenever the search
+    // term changes, same as changing the page size does, so results always
+    // start from the top of the matching set.
+    const handleSearch = (value) => {
+        setSearch(value);
+        setPage(0);
+    };
 
     const openDeleteModal = (user) => {
         setSelectedUser(user);
@@ -166,6 +177,15 @@ const UserManagement = () => {
                     <Plus />
                     Add user
                 </button>
+            </div>
+
+            <div className="mx-3 md:mx-0 mt-2 md:mt-3 max-w-md">
+                <SmartSearch
+                    placeholder="Search by username, full name, or role"
+                    onSearch={handleSearch}
+                    loading={isFetching && !isLoading}
+                    fullWidth
+                />
             </div>
 
             <Box sx={{ height: "calc(100vh - 260px)", width: "100%" }} className="bg-white rounded-2xl shadow-sm mt-3">
