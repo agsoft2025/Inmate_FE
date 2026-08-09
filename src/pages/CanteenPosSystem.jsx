@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { Box, Button, Divider, Grid, Paper, TextField, Typography } from "@mui/material";
 import { useSnackbar } from "notistack";
@@ -15,8 +15,10 @@ import useDebounce from "../hooks/useDebounce";
 
 import PosLeftCard from "../components/pos/PosLeftCard";
 import { useLocationCtx } from "../context/LocationContext";
-import FaceRecognition from "../components/faceIdComponent/FaceID";
+import FaceRecognition, { distanceToConfidence } from "../components/faceIdComponent/FaceID";
 import { fetchStudentByFace } from "../service/studentService";
+import RiskFlagChip from "../components/risk/RiskFlagChip";
+import RiskReviewPanel from "../components/risk/RiskReviewPanel";
 
 const CanteenPosSystem = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -27,7 +29,9 @@ const CanteenPosSystem = () => {
     const [purchaseSearch, setPurchaseSearch] = useState("");
     const [refetchKey, setRefetchKey] = useState(0);
     const [openFaceId, setOpenFaceId] = useState(false);
-    const [faceidData, setFaceIdData] = useState(null);    
+    // Financial Anomaly & Fraud Detection - the purchase currently open in
+    // the shared risk review modal (null when closed).
+    const [reviewTransaction, setReviewTransaction] = useState(null);
 
     const {
         data: purchasesData,
@@ -43,55 +47,50 @@ const CanteenPosSystem = () => {
     const purchases = purchasesData?.data || purchasesData || [];
 
     const reverseMutation = useReversePostCartMutation();
-    const fetchingFaceRef = useRef(false);
     const selectedInmateIdRef = useRef(null);
 
-    useEffect(() => {
-        if (!faceidData) return;
+    // Face Verification Hardening - FaceID now performs the backend lookup
+    // itself (via this onVerify callback) and shows the result, including
+    // match confidence, inside its own modal before handing off. This
+    // replaces the old pattern of closing the modal immediately and doing
+    // the fetch-by-face call in a separate effect (which also needed its
+    // own re-entrancy guard - no longer necessary since onVerify only runs
+    // once per capture attempt).
+    const handleVerifyFace = useCallback(async (descriptor) => {
+        try {
+            const res = await fetchStudentByFace(descriptor);
+            const student = res?.data;
 
-        // ✅ stop repeated calls if FaceRecognition emits multiple times
-        if (fetchingFaceRef.current) return;
-        fetchingFaceRef.current = true;
-
-        let alive = true;
-
-        (async () => {
-            try {
-                const res = await fetchStudentByFace(faceidData);
-
-                if (!alive) return;
-
-                const student = res?.data;
-                if (student?._id) {
-                    selectedInmateIdRef.current = student._id;
-                    setStudentSearchValue(student.inmateId || "");
-                } else {
-                    enqueueSnackbar(res?.message || "Student not found", { variant: "warning" });
-                }
-            } catch (err) {
-                if (!alive) return;
-                console.log(err);
-
-                enqueueSnackbar(
-                    err?.response?.data?.message || "Face ID fetch failed",
-                    { variant: "error" }
-                );
-            } finally {
-                if (!alive) return;
-
-                // ✅ close modal + clear to prevent infinite effect triggers
-                setFaceIdData(null);
-                setOpenFaceId(false);
-
-                // ✅ allow new scan next time
-                fetchingFaceRef.current = false;
+            if (student?._id) {
+                return {
+                    success: true,
+                    confidence: distanceToConfidence(res?.distance),
+                    message: `Matched ${student.inmateId || student.firstName || "inmate"}`,
+                    payload: student,
+                };
             }
-        })();
 
-        return () => {
-            alive = false;
-        };
-    }, [faceidData]);
+            return {
+                success: false,
+                confidence: distanceToConfidence(res?.distance),
+                message: res?.message || "Student not found",
+            };
+        } catch (err) {
+            return {
+                success: false,
+                confidence: distanceToConfidence(err?.response?.data?.distance),
+                message: err?.response?.data?.message || "Face ID fetch failed",
+            };
+        }
+    }, []);
+
+    // Called once FaceID has a successful, verified result.
+    const handleFaceVerified = useCallback((descriptor, result) => {
+        if (result?.success && result.payload) {
+            selectedInmateIdRef.current = result.payload._id;
+            setStudentSearchValue(result.payload.inmateId || "");
+        }
+    }, []);
 
     const filteredPurchases = useMemo(() => {
         const s = purchaseSearch.trim().toLowerCase();
@@ -113,6 +112,18 @@ const CanteenPosSystem = () => {
                 variant: "error",
             });
         }
+    };
+
+    // Financial Anomaly & Fraud Detection - opens the shared risk review
+    // modal for a Recent Purchases row.
+    const handleOpenRiskReview = (purchase) => {
+        setReviewTransaction({
+            id: purchase._id,
+            source: "POS",
+            inmateId: purchase.inmateId,
+            amount: purchase.totalAmount,
+            risk: purchase.risk,
+        });
     };
 
     const handleRefreshPurchases = () => setRefetchKey((p) => p + 1);
@@ -346,6 +357,10 @@ const CanteenPosSystem = () => {
                                     ₹{p.totalAmount}
                                 </Typography>
 
+                                {p.risk?.level && p.risk.level !== "clear" && (
+                                    <RiskFlagChip risk={p.risk} onClick={() => handleOpenRiskReview(p)} />
+                                )}
+
                                 <Button
                                     variant="contained"
                                     color="error"
@@ -458,9 +473,16 @@ const CanteenPosSystem = () => {
                     mode="match"
                     open={openFaceId}
                     setOpen={setOpenFaceId}
-                    setFaceIdData={setFaceIdData}
+                    setFaceIdData={handleFaceVerified}
+                    onVerify={handleVerifyFace}
                 />
             )}
+
+            <RiskReviewPanel
+                open={Boolean(reviewTransaction)}
+                transaction={reviewTransaction}
+                onClose={() => setReviewTransaction(null)}
+            />
         </Box>
     );
 };

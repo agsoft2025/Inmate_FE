@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
     Card,
     CardContent,
@@ -25,20 +26,21 @@ import {
 } from "../hooks/useReportsQuery";
 import useDebounce from "../hooks/useDebounce";
 import { useStudentExactQuery, useStudentsQuery } from "../hooks/useStudentExactQuery";
+import { REPORT_TYPES } from "../constants/reportTypes";
+import { parseReportQuery, describeQuery } from "../utils/nlReportQuery";
+import NLReportCopilot from "../components/reports/NLReportCopilot";
 
 /* =======================
    REPORT TYPES
+   (moved to ../constants/reportTypes.js so the NL copilot's parser and the
+   header's CopilotFab can share the same list - values are unchanged)
 ======================= */
 
-const reportTypes = [
-    { id: 1, title: "Inmate Balance Report", apiUrl: "reports/intimate-balance-report" },
-    { id: 2, title: "Transaction Summary", apiUrl: "reports/transaction-summary-report" },
-    { id: 3, title: "Canteen Sales", apiUrl: "reports/tuckshop-sales-report" },
-    { id: 5, title: "Inventory", apiUrl: "reports/inventory-report" },
-];
+const reportTypes = REPORT_TYPES;
 
 export default function Reports() {
     const { enqueueSnackbar } = useSnackbar();
+    const location = useLocation();
 
     const [apiUrl, setApiUrl] = useState(reportTypes[0]);
     const [format, setFormat] = useState("csv");
@@ -64,6 +66,162 @@ export default function Reports() {
     const total = studentsRes?.total ?? studentsRes?.count ?? 0;
 
     const reportMutation = useGenerateReportMutation();
+
+    /* =======================
+       NL REPORT & QUERY COPILOT
+       Deterministic, rule-based (no AI/LLM - this codebase has none)
+       translation of a free-text question into the same filter state the
+       report cards below already use. See ../utils/nlReportQuery.js.
+    ======================= */
+
+    const [nlQuery, setNlQuery] = useState("");
+    const [nlPreview, setNlPreview] = useState(null); // { sentence, note, isResolving, matchedAny }
+    const [pendingInmateToken, setPendingInmateToken] = useState(null);
+    const appliedNavQuery = useRef(false);
+
+    const runCopilotParse = (text) => {
+        if (!text || !text.trim()) return;
+        const parsed = parseReportQuery(text, { fallbackReportTypeId: apiUrl.id });
+
+        const reportChanged = parsed.reportTypeId && parsed.reportTypeId !== apiUrl.id;
+        const nextApiUrl = reportChanged
+            ? reportTypes.find((r) => r.id === parsed.reportTypeId) || apiUrl
+            : apiUrl;
+
+        // Mirror the same "switch report card" resets used by the manual
+        // card-click handler below, then layer the parsed date info on top,
+        // computed locally so the preview sentence never reads stale state.
+        let effDateRange = reportChanged ? "" : dateRange;
+        let effFrequency = reportChanged ? "" : frequency;
+        let effStartDate = reportChanged ? "" : startDate;
+        let effEndDate = reportChanged ? "" : endDate;
+
+        if (parsed.dateMode === "frequency") {
+            effFrequency = parsed.frequency;
+            effDateRange = "";
+            effStartDate = "";
+            effEndDate = "";
+        } else if (parsed.dateMode === "range") {
+            effDateRange = parsed.dateRange;
+            effFrequency = "";
+            effStartDate = "";
+            effEndDate = "";
+        } else if (parsed.dateMode === "custom") {
+            effDateRange = "custom";
+            effFrequency = "";
+            effStartDate = parsed.startDate;
+            effEndDate = parsed.endDate;
+        }
+
+        const effFormat = parsed.format || format;
+
+        if (reportChanged) {
+            setApiUrl(nextApiUrl);
+            setStudent(null);
+        }
+        setDateRange(effDateRange);
+        setFrequency(effFrequency);
+        setStartDate(effStartDate);
+        setEndDate(effEndDate);
+        if (parsed.format) setFormat(parsed.format);
+
+        let isResolving = false;
+        let note = null;
+        if (nextApiUrl.id === 1 && parsed.inmateToken) {
+            // Reuses the existing debounced inmate search (same one the
+            // Autocomplete field uses) instead of adding a new lookup.
+            setStudentSearch(parsed.inmateToken);
+            setPendingInmateToken(parsed.inmateToken);
+            isResolving = true;
+            note = `Looking up inmate "${parsed.inmateToken}"...`;
+        } else {
+            setPendingInmateToken(null);
+        }
+
+        const effDateMode = effFrequency
+            ? "frequency"
+            : effDateRange === "custom"
+            ? "custom"
+            : effDateRange
+            ? "range"
+            : null;
+
+        const sentence = describeQuery({
+            reportTitle: nextApiUrl.title,
+            dateMode: effDateMode,
+            dateRange: effDateRange,
+            frequency: effFrequency,
+            startDate: effStartDate,
+            endDate: effEndDate,
+            format: effFormat,
+            inmateLabel: nextApiUrl.id === 1 && parsed.inmateToken ? parsed.inmateToken : null,
+        });
+
+        setNlPreview({ sentence, note, isResolving, matchedAny: parsed.matchedAny });
+    };
+
+    // Prefill + auto-translate when arriving from the header's CopilotFab
+    // (it hands off the raw question via router navigation state instead of
+    // generating the report itself, so this page's generate() stays the
+    // single place that produces PDF/CSV/Excel output).
+    useEffect(() => {
+        if (appliedNavQuery.current) return;
+        const incoming = location.state?.nlQuery;
+        if (incoming) {
+            appliedNavQuery.current = true;
+            setNlQuery(incoming);
+            runCopilotParse(incoming);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.state]);
+
+    // Resolve a parsed inmate token (e.g. "INM1023") against the same
+    // student search results the Autocomplete field already fetches.
+    useEffect(() => {
+        if (!pendingInmateToken) return;
+        if (debouncedSearch !== pendingInmateToken) return;
+        if (isFetching) return;
+
+        const match = students.find(
+            (s) => (s?.inmateId || "").toLowerCase() === pendingInmateToken.toLowerCase()
+        );
+
+        if (match) {
+            setStudent(match);
+            setNlPreview((prev) =>
+                prev
+                    ? {
+                        ...prev,
+                        isResolving: false,
+                        note: null,
+                        sentence: describeQuery({
+                            reportTitle: apiUrl.title,
+                            dateMode: frequency ? "frequency" : dateRange === "custom" ? "custom" : dateRange ? "range" : null,
+                            dateRange,
+                            frequency,
+                            startDate,
+                            endDate,
+                            format,
+                            inmateLabel: `${match.firstName || ""} ${match.lastName || ""}`.trim() + ` (${match.inmateId})`,
+                        }),
+                    }
+                    : prev
+            );
+        } else {
+            setNlPreview((prev) =>
+                prev
+                    ? {
+                        ...prev,
+                        isResolving: false,
+                        note: `No inmate found matching "${pendingInmateToken}" - the report will include all inmates in range.`,
+                    }
+                    : prev
+            );
+        }
+
+        setPendingInmateToken(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingInmateToken, debouncedSearch, isFetching, students]);
 
     /* =======================
        PAYLOAD
@@ -161,6 +319,11 @@ export default function Reports() {
         URL.revokeObjectURL(url);
     };
 
+    const handleRunFromCopilot = async () => {
+        await generate();
+        setNlPreview(null);
+    };
+
     /* =======================
        UI
     ======================= */
@@ -171,6 +334,16 @@ export default function Reports() {
                 Financial Reports
             </Typography>
             <h3>Generate and view comprehensive financial reports</h3>
+
+            <NLReportCopilot
+                value={nlQuery}
+                onChange={setNlQuery}
+                onAsk={() => runCopilotParse(nlQuery)}
+                preview={nlPreview}
+                onRun={handleRunFromCopilot}
+                onDismiss={() => setNlPreview(null)}
+                running={reportMutation.isPending}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-5">
 

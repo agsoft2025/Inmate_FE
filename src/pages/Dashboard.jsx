@@ -9,11 +9,15 @@ import {
   MessageCircle,
   Sparkles,
   ExternalLink,
+  ShieldAlert,
 } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import { useDashboardQuery } from "../hooks/useDashboardQuery";
 import { useSendOutreachMutation } from "../hooks/useSendOutreachMutation";
+import { useFlaggedTransactionsQuery } from "../hooks/useRiskQueries";
 import OutreachMessageDialog from "../components/commonModals/OutreachMessageDialog";
+import RiskFlagChip from "../components/risk/RiskFlagChip";
+import RiskReviewPanel from "../components/risk/RiskReviewPanel";
 
 // Estimate how many days until an inmate's wallet balance hits zero,
 // based on their average daily spend (returned by the dashboard API from
@@ -163,6 +167,21 @@ export default function Dashboard() {
   const [outreachInmate, setOutreachInmate] = useState(null);
   const [outreachDraft, setOutreachDraft] = useState("");
   const sendOutreachMutation = useSendOutreachMutation();
+
+  // Financial Anomaly & Fraud Detection: "Flagged for Review" panel + the
+  // shared risk review modal (Confirm / False Positive / Investigate).
+  const flaggedQuery = useFlaggedTransactionsQuery({ days: 7, limit: 5 });
+  const [reviewTransaction, setReviewTransaction] = useState(null);
+
+  const handleOpenRiskReview = (tx) => {
+    setReviewTransaction({
+      id: tx._id,
+      source: tx.source,
+      inmateId: tx.inmateId,
+      amount: tx.amount,
+      risk: tx.risk,
+    });
+  };
 
   const handleDraftOutreach = (inmate) => {
     const daysToZero = getDaysToZero(inmate.balance, inmate.avgDailySpend);
@@ -515,6 +534,45 @@ export default function Dashboard() {
 
       </div>
 
+      {/* 🚩 Flagged for Review (Financial Anomaly & Fraud Detection) */}
+      <div className="bg-white rounded-2xl shadow-sm border">
+        <div className="p-4 sm:p-5 border-b flex items-center gap-2">
+          <ShieldAlert className="text-red-500 w-5 h-5" />
+          <h2 className="text-base sm:text-lg font-bold">Flagged for Review</h2>
+          <span className="text-xs text-slate-400 ml-auto">Last 7 days</span>
+        </div>
+
+        <div className="p-3 sm:p-5 space-y-3">
+          {flaggedQuery.isLoading ? (
+            <div className="text-sm text-slate-500">Loading flagged transactions...</div>
+          ) : flaggedQuery.isError ? (
+            <div className="text-sm text-slate-500">Flagged transactions are unavailable right now.</div>
+          ) : !flaggedQuery.data?.flagged?.length ? (
+            <div className="text-sm text-slate-500">No transactions flagged for review 🎉</div>
+          ) : (
+            flaggedQuery.data.flagged.map((tx) => (
+              <button
+                key={tx._id}
+                type="button"
+                onClick={() => handleOpenRiskReview(tx)}
+                className="w-full text-left border rounded-xl p-3 hover:shadow-sm hover:border-red-200 transition"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">Inmate {tx.inmateId || "-"}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      ₹{Math.abs(tx.amount ?? 0)} • {tx.source}
+                      {tx.eventDate ? ` • ${new Date(tx.eventDate).toLocaleString()}` : ""}
+                    </p>
+                  </div>
+                  <RiskFlagChip risk={tx.risk} />
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
       <OutreachMessageDialog
         open={Boolean(outreachInmate)}
         inmate={outreachInmate}
@@ -522,6 +580,12 @@ export default function Dashboard() {
         onClose={handleCloseOutreach}
         onSend={handleSendOutreach}
         sending={sendOutreachMutation.isPending}
+      />
+
+      <RiskReviewPanel
+        open={Boolean(reviewTransaction)}
+        transaction={reviewTransaction}
+        onClose={() => setReviewTransaction(null)}
       />
     </div>
   );

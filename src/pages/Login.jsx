@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
@@ -9,7 +9,7 @@ import { useSnackbar } from "notistack";
 import { useAuth } from "../context/AuthContext";
 import { useLoginMutation, useFaceLoginMutation } from "../hooks/useAuthMutation";
 import logo from "../assets/logo.png";
-import FaceRecognition from "../components/faceIdComponent/FaceID";
+import FaceRecognition, { distanceToConfidence } from "../components/faceIdComponent/FaceID";
 
 const getRedirectPath = (role) => {
   const r = String(role || "").toUpperCase();
@@ -44,7 +44,6 @@ export default function Login() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [openFaceId, setOpenFaceId] = useState(false);
-  const [faceidData, setFaceIdData] = useState(null);
 
   const schema = useMemo(
     () =>
@@ -93,25 +92,42 @@ export default function Login() {
     });
   };
 
-  // ✅ FaceID login trigger (replaces your old axios effect)
-  useEffect(() => {
-    if (!faceidData) return;
-
-    const run = async () => {
+  // Face Verification Hardening - FaceID now performs the backend match
+  // itself (via this onVerify callback) and shows the result, including
+  // match confidence, inside its own modal before handing off. This
+  // replaces the old pattern of closing the modal immediately and doing
+  // the login call in a separate effect.
+  const handleVerifyFace = useCallback(
+    async (descriptor) => {
       try {
-        const data = await faceLoginMutation.mutateAsync(faceidData);
-        handleAuthSuccess(data);
+        const data = await faceLoginMutation.mutateAsync(descriptor);
+        const name = data?.user?.fullName || data?.user?.username || "";
+        return {
+          success: true,
+          confidence: distanceToConfidence(data?.distance),
+          message: name ? `Welcome back, ${name}` : "Face verified",
+          payload: data,
+        };
       } catch (err) {
-        enqueueSnackbar(getErrorMessage(err), { variant: "error" });
-      } finally {
-        // important so it doesn't auto-retry on re-render
-        setFaceIdData(null);
-        setOpenFaceId(false);
+        return {
+          success: false,
+          confidence: distanceToConfidence(err?.response?.data?.distance),
+          message: getErrorMessage(err),
+        };
       }
-    };
+    },
+    [faceLoginMutation]
+  );
 
-    run();
-  }, [faceidData]);
+  // Called once FaceID has a successful, verified result.
+  const handleFaceVerified = useCallback(
+    (descriptor, result) => {
+      if (result?.success && result.payload) {
+        handleAuthSuccess(result.payload);
+      }
+    },
+    [handleAuthSuccess]
+  );
 
   const loading = loginMutation.isPending || faceLoginMutation.isPending;
 
@@ -191,7 +207,8 @@ export default function Login() {
           mode="match"
           open={openFaceId}
           setOpen={setOpenFaceId}
-          setFaceIdData={setFaceIdData}
+          setFaceIdData={handleFaceVerified}
+          onVerify={handleVerifyFace}
         />
       )}
     </div>

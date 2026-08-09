@@ -16,6 +16,8 @@ import { DataGrid, useGridApiRef } from "@mui/x-data-grid";
 import { useTransactionsQuery } from "../hooks/useTransactionsQuery";
 import { formatDate } from "../hooks/useFormatDate";
 import SmartSearch from "../components/common/SmartSearch";
+import RiskFlagChip from "../components/risk/RiskFlagChip";
+import RiskReviewPanel from "../components/risk/RiskReviewPanel";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000/").replace(/\/+$/, "");
 
@@ -54,6 +56,9 @@ export default function TransactionHistory() {
         files: [],
         selectedIndex: 0,
     });
+    // Financial Anomaly & Fraud Detection - the transaction currently open
+    // in the risk review modal (null when closed).
+    const [reviewTransaction, setReviewTransaction] = useState(null);
 
     const apiRef = useGridApiRef();
     const hasScrolledToHighlight = useRef(false);
@@ -124,6 +129,7 @@ export default function TransactionHistory() {
                 createdAt: t.createdAt,
                 source: t.source || "-",
                 status: t.isReversed || t.status === "reversed" ? "reversed" : t.status || "Completed",
+                risk: t.risk || { score: 0, level: "clear", signals: [] },
                 raw: t,
             };
         });
@@ -153,8 +159,31 @@ export default function TransactionHistory() {
         rows.length > 0 &&
         !rows.some((row) => row.id === highlightId);
 
+    // Financial Anomaly & Fraud Detection - opens the shared review modal
+    // for a row's underlying transaction.
+    const handleOpenRiskReview = (row) => {
+        const tx = row.raw;
+        setReviewTransaction({
+            id: row.id,
+            source: tx.source,
+            inmateId: tx.inmateId,
+            amount: row.amount,
+            risk: row.risk,
+        });
+    };
+
     const columns = useMemo(
         () => [
+            {
+                field: "risk",
+                headerName: "Risk Flag",
+                flex: 0.9,
+                minWidth: 140,
+                sortable: false,
+                renderCell: (params) => (
+                    <RiskFlagChip risk={params.row.risk} onClick={() => handleOpenRiskReview(params.row)} />
+                ),
+            },
             {
                 field: "inmateId",
                 headerName: "Inmate ID",
@@ -501,6 +530,12 @@ export default function TransactionHistory() {
                     )}
                 </DialogContent>
             </Dialog>
+
+            <RiskReviewPanel
+                open={Boolean(reviewTransaction)}
+                transaction={reviewTransaction}
+                onClose={() => setReviewTransaction(null)}
+            />
         </>
     );
 }

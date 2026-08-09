@@ -8,6 +8,7 @@ import { useLocationCtx } from "../context/LocationContext";
 import DBLocationModal from "../components/location/DBLocationModal";
 import { useDBCtx } from "../context/DBContext";
 import Sidebar from "../components/Sidebar.jsx";
+import CopilotFab from "../components/copilot/CopilotFab.jsx";
 
 export default function LayoutContainer() {
   const appVersion = import.meta.env.VITE_APP_VERSION || "1.0.0";
@@ -124,6 +125,11 @@ export default function LayoutContainer() {
       )}
 
       <DBLocationModal open={dbModal} onClose={() => setDbModal(false)} />
+
+      {/* NL Report & Query Copilot - small floating icon for quick report
+          questions from any admin page. Scoped to ADMIN the same way the
+          Location/DB Location header controls already are. */}
+      {isAdminUser && <CopilotFab />}
     </div>
   );
 }
