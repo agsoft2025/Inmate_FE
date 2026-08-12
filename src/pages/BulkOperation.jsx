@@ -486,7 +486,7 @@ const BulkOperation = ({ location }) => {
                                     startIcon={<Download className="w-4 h-4" />}
                                     onClick={handleDownloadCorrected}
                                     disabled={!hasActionableCorrections}
-                                    className="bg-primary!"
+                                    className="bg-primary! text-white!"
                                 >
                                     Download corrected file
                                 </Button>
