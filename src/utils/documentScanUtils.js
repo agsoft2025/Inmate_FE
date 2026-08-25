@@ -112,6 +112,9 @@ const MONTHS = {
   jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
 };
 
+// Inmate ID formats: consistent with the pattern used throughout the app
+const INMATE_ID_REGEX = /\b(?:INM-)?[A-Z]{2,5}\d{2,6}\b/;
+
 function toInputDate(y, mo, d) {
   const year = String(y).padStart(4, "0");
   const month = String(mo).padStart(2, "0");
@@ -274,11 +277,28 @@ export function parseInvoiceFields(text, words = [], pageConfidence = null) {
   return result;
 }
 
-// Matches an inmate-id-shaped token (e.g. INM001, STU001), consistent with
+// Matches an inmate-id-shaped token (e.g. INM-001, STU001), consistent with
 // the id format used elsewhere in this app.
-function findInmateIdToken(text) {
-  const m = text.match(/\b[A-Z]{2,5}\d{2,6}\b/);
-  return m ? m[0] : null;
+function findInmateIdToken(text = "") {
+  const normalized = text
+    .replace(/\r/g, " ")
+    .replace(/\n/g, " ");
+
+  const match = normalized.match(
+    /inmate\s*id|inmateld|inmateid/i
+  );
+
+  if (!match) return null;
+
+  const afterLabel = normalized.slice(match.index + match[0].length);
+
+  const valueMatch = afterLabel.match(
+    /[:\-]?\s*(INM[A-Z0-9]{3,})/i
+  );
+
+  if (!valueMatch) return null;
+
+  return valueMatch[1].toUpperCase();
 }
 
 // Returns { value, raw } - `value` is the canonical form dropped into the
@@ -323,7 +343,15 @@ export function parseDepositSlipFields(text, words = [], pageConfidence = null) 
   const result = {};
 
   const inmateId = findInmateIdToken(text);
-  if (inmateId) result.query = withConfidence(inmateId, inmateId, words, pageConfidence);
+  console.log("inmateId",inmateId,text)
+  if (inmateId) {
+    result.inmateId = withConfidence(
+      inmateId,
+      inmateId,
+      words,
+      pageConfidence
+    );
+  }
 
   const depositTypeMatch = findDepositTypeMatch(text);
   if (depositTypeMatch) {

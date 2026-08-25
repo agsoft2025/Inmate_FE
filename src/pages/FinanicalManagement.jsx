@@ -79,7 +79,6 @@ export default function FinancialManagement() {
   const [student, setStudent] = useState(null);
 
   const {
-    register,
     handleSubmit,
     formState: { errors },
     setValue,
@@ -495,30 +494,42 @@ export default function FinancialManagement() {
 
             {/* Deposit Amount */}
             <div>
-              <TextField
-                label="Deposit Amount"
-                size="small"
-                fullWidth
-                type="number"
-                {...register("depositAmount")}
-                error={!!errors.depositAmount}
-                helperText={errors.depositAmount?.message}
-                onWheel={(e) => e.target.blur()}
-                sx={isLowConfidenceField("depositAmount") ? LOW_CONFIDENCE_SX : undefined}
+              <Controller
+                name="depositAmount"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Deposit Amount"
+                    size="small"
+                    fullWidth
+                    type="number"
+                    error={!!errors.depositAmount}
+                    helperText={errors.depositAmount?.message}
+                    onWheel={(e) => e.target.blur()}
+                    sx={isLowConfidenceField("depositAmount") ? LOW_CONFIDENCE_SX : undefined}
+                  />
+                )}
               />
               {renderConfidenceBadge("depositAmount")}
             </div>
 
             {/* Remarks */}
             <div>
-              <TextField
-                label="Remarks"
-                size="small"
-                fullWidth
-                {...register("remarks")}
-                error={!!errors.remarks}
-                helperText={errors.remarks?.message}
-                sx={isLowConfidenceField("remarks") ? LOW_CONFIDENCE_SX : undefined}
+              <Controller
+                name="remarks"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Remarks"
+                    size="small"
+                    fullWidth
+                    error={!!errors.remarks}
+                    helperText={errors.remarks?.message}
+                    sx={isLowConfidenceField("remarks") ? LOW_CONFIDENCE_SX : undefined}
+                  />
+                )}
               />
               {renderConfidenceBadge("remarks")}
             </div>

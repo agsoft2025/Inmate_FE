@@ -8,22 +8,23 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
 
-  // 🔁 restore login from localStorage
+  // 🔁 restore login from localStorage.
+  // The JWT itself is no longer stored/readable here - it lives in an
+  // httpOnly cookie the backend set on login (see authController.js).
+  // `user` is just a cached copy of the profile info from that login
+  // response, kept so the UI doesn't flash "logged out" on a page refresh;
+  // it is not itself proof of a valid session. If the underlying cookie is
+  // actually missing/expired, the first authenticated API call gets a
+  // 401/403 and lib/axios.js's response interceptor clears this and
+  // redirects to /login.
   useEffect(() => {
-    const token = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
-
-    if (token) {
-      if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch {
-          // if user in storage is corrupted
-          setUser({ role: "user" });
-        }
-      } else {
-        // token exists but user not stored
-        setUser({ role: "user" });
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        // if user in storage is corrupted
+        setUser(null);
       }
     }
 
@@ -32,26 +33,24 @@ export function AuthProvider({ children }) {
 
   const login = (payload) => {
     const nextUser = payload?.user ?? payload ?? { role: "user" };
-    
-    setUser(nextUser);
 
-    if (payload?.token) {
-      localStorage.setItem("token", payload.token);
-    }
-    // store user even if token exists but user is present
+    setUser(nextUser);
+    // No token to store: the backend sets it as an httpOnly cookie, which
+    // is never present in this response body and never touches JS/storage.
     localStorage.setItem("user", JSON.stringify(nextUser));
   };
 
   const logout = async () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.clear();
     const currentUserId = user?.id;
     try {
+      // Clears the httpOnly auth cookie (and blacklists the token)
+      // server-side - see authController.js's logout.
       await logoutService();
     } catch (error) {
       console.warn("Logout API failed", error);
     }
+    localStorage.removeItem("user");
+    localStorage.clear();
     deleteCookie("selectedLocation", currentUserId);
     setUser(null);
   };
@@ -59,7 +58,10 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
-      isAuth: !!localStorage.getItem("token"), // ✅ token is source of truth
+      // ✅ presence of the cached profile is the source of truth now that
+      // the JWT itself is httpOnly and unreadable from JS (see the effect
+      // above for how a stale/expired cookie still gets caught).
+      isAuth: !!user,
       login,
       logout,
       booting,
