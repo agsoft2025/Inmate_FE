@@ -118,8 +118,6 @@ export default function LayoutContainer() {
         <LocationDialog
           open={locationModal}
           onClose={() => setLocationModal(false)}
-          isEdit={selectedLocation?._id}
-          selectedLocation={selectedLocation}
         />
       )}
 
